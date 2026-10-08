@@ -1,0 +1,5 @@
+#!/bin/sh
+
+openbox-session &
+PYTHONPATH=/usr/share/neonveil/current:/usr/share/neonveil/current/desktop \
+	exec /usr/bin/python3 /usr/share/neonveil/current/desktop/main.py

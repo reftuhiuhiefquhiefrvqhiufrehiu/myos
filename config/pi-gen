@@ -1,0 +1,17 @@
+IMG_NAME="MyOS-RPi4"
+PI_GEN_RELEASE="neonveil"
+RELEASE="trixie"
+STAGE_LIST="stage0 stage1 stage2 stage-neonveil"
+EXPORT_CONFIG_DIR="export-neonveil"
+DEPLOY_COMPRESSION="none"
+
+TARGET_HOSTNAME="neonveil"
+LOCALE_DEFAULT="de_DE.UTF-8"
+TIMEZONE_DEFAULT="Europe/Berlin"
+KEYBOARD_KEYMAP="de"
+KEYBOARD_LAYOUT="German"
+
+# The local desktop account has no baked-in password and is not SSH-enabled.
+FIRST_USER_NAME="neonveil"
+ENABLE_SSH=0
+ENABLE_CLOUD_INIT=0

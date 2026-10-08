@@ -1,0 +1,1 @@
+"""MyOS music player."""

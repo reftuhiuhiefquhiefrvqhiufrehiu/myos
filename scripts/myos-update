@@ -1,0 +1,2 @@
+#!/bin/sh
+exec /usr/bin/python3 /usr/share/neonveil/current/update_manager/cli.py "$@"
