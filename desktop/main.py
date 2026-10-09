@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
 
 from apps.code_studio.app import CodeStudioWindow
 from apps.file_manager.app import FileManagerWindow
+from apps.file_manager.shortcuts import read_desktop_shortcut
 from apps.file_manager.trash import TrashWindow
 from apps.image_viewer.app import ImageViewerWindow
 from apps.browser.app import BrowserWindow
@@ -26,23 +27,47 @@ from system_info import AboutMyOSWindow
 from taskbar import Taskbar
 
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png"}
-CODE_EXTENSIONS = {".css", ".html", ".htm", ".js", ".json", ".md", ".mjs", ".ts", ".tsx", ".txt", ".yaml", ".yml"}
-TEXT_EXTENSIONS = {
-    ".cfg",
-    ".conf",
-    ".csv",
-    ".ini",
-    ".json",
-    ".log",
-    ".md",
-    ".py",
-    ".sh",
-    ".txt",
-    ".xml",
-    ".yaml",
-    ".yml",
+FILE_APPLICATIONS = {
+    **dict.fromkeys({".jpg", ".jpeg", ".png"}, "pictures"),
+    **dict.fromkeys({".mp3", ".ogg"}, "music"),
+    **dict.fromkeys(
+        {
+            ".css",
+            ".html",
+            ".htm",
+            ".js",
+            ".jsx",
+            ".json",
+            ".md",
+            ".mjs",
+            ".py",
+            ".svg",
+            ".ts",
+            ".tsx",
+            ".yaml",
+            ".yml",
+        },
+        "code",
+    ),
+    **dict.fromkeys(
+        {
+            ".cfg",
+            ".conf",
+            ".csv",
+            ".ini",
+            ".log",
+            ".sh",
+            ".toml",
+            ".txt",
+            ".xml",
+        },
+        "editor",
+    ),
 }
+
+
+def file_application(path: str | Path) -> str | None:
+    return FILE_APPLICATIONS.get(Path(path).suffix.casefold())
 
 
 def create_settings_window(desktop: DesktopShell) -> SettingsWindow:
@@ -64,6 +89,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("neonveil")
     app.setQuitOnLastWindowClosed(False)
+    app.aboutToQuit.connect(lambda: QApplication.clipboard().clear())
 
     profiles = ProfileStore()
     chooser = ProfileChooser(profiles)
@@ -161,23 +187,55 @@ def main() -> int:
         show_notification("Angemeldet", f"Willkommen, {current_profile.username}.", "MyOS")
 
     def open_file(path: str) -> None:
-        file_path = Path(path)
-        suffix = file_path.suffix.lower()
-        if suffix in IMAGE_EXTENSIONS:
+        file_path = Path(path).expanduser().absolute()
+        if file_path.is_dir():
+            register_window(
+                FileManagerWindow(
+                    open_file,
+                    file_path,
+                    open_trash=open_trash_window,
+                    desktop_path=desktop.desktop_path,
+                )
+            )
+            return
+        if file_path.suffix.casefold() == ".desktop":
+            try:
+                target, app_id = read_desktop_shortcut(file_path)
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(
+                    desktop, "Verknüpfung kann nicht geöffnet werden", str(error)
+                )
+                return
+            if app_id is not None:
+                open_application(app_id)
+            elif target is not None:
+                open_file(str(target))
+            return
+
+        application = file_application(file_path)
+        if application == "pictures":
             taskbar.record_recent("pictures")
             register_window(ImageViewerWindow(file_path))
-        elif suffix in CODE_EXTENSIONS:
+        elif application == "code":
             taskbar.record_recent("code")
             register_window(create_code_studio_window(open_local_browser, file_path))
-        elif suffix in TEXT_EXTENSIONS:
+        elif application == "editor":
             taskbar.record_recent("editor")
             register_window(TextEditorWindow(file_path))
+        elif application == "music":
+            taskbar.record_recent("music")
+            window = MusicPlayerWindow()
+            window.add_to_playlist([file_path])
+            window.play_index(0)
+            register_window(window)
         elif not QDesktopServices.openUrl(file_path.as_uri()):
             QMessageBox.warning(
                 desktop,
                 "Datei kann nicht geöffnet werden",
                 f"Für „{file_path.name}“ ist keine passende Anwendung verfügbar.",
             )
+
+    desktop.file_requested.connect(open_file)
 
     def open_trash_window() -> None:
         register_window(TrashWindow())
@@ -193,7 +251,11 @@ def main() -> int:
                 f"{path}\n\n{error}",
             )
             return
-        register_window(FileManagerWindow(open_file, folder))
+        register_window(
+            FileManagerWindow(
+                open_file, folder, desktop_path=desktop.desktop_path
+            )
+        )
         taskbar.record_recent("downloads")
 
     def connect_browser_actions(window: BrowserWindow) -> None:
@@ -227,7 +289,11 @@ def main() -> int:
         elif app_id == "about":
             window = AboutMyOSWindow()
         elif app_id == "files":
-            window = FileManagerWindow(open_file, open_trash=open_trash_window)
+            window = FileManagerWindow(
+                open_file,
+                open_trash=open_trash_window,
+                desktop_path=desktop.desktop_path,
+            )
         elif app_id == "downloads":
             downloads_path = Path.home() / "Downloads"
             try:
@@ -240,7 +306,10 @@ def main() -> int:
                 )
                 return
             window = FileManagerWindow(
-                open_file, downloads_path, open_trash=open_trash_window
+                open_file,
+                downloads_path,
+                open_trash=open_trash_window,
+                desktop_path=desktop.desktop_path,
             )
         elif app_id == "editor":
             window = TextEditorWindow()

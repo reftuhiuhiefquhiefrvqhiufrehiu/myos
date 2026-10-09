@@ -104,9 +104,9 @@ styling and standard system icons; no proprietary desktop assets are included.
 
 The **Dateien** application lists the current directory with folders first,
 opens folders and files on double-click, and offers navigation, copy, move,
-and delete actions. Copy/move select a destination directory; delete asks for
-confirmation. Text files open in the built-in editor, PNG/JPG files open in
-the image viewer, and other file types are passed to the system's registered
+and recoverable deletion to the Papierkorb. Text files open in the built-in editor,
+web-development files in Code Studio, images in Bilder, and MP3/OGG files in
+the music player. Other file types are passed to the system's registered
 application when available.
 
 The **Texteditor** supports new, open, save, and save-as operations with UTF-8
@@ -193,6 +193,28 @@ Runtime packages include `alsa-utils` for volume control. `xrandr` is supplied
 by the existing `x11-xserver-utils` package. These are staged automatically by
 the image build; run `./build-image.sh` only when you intend to generate a new
 SD-card image.
+
+## Phase 8: Desktop file interactions
+
+Version 1.1.0 adds a unified local-file workflow. Double-clicking a file or
+opening it with Enter routes common image, audio, web/code, and text formats
+to their matching MyOS apps. MyOS `.desktop` links are read as local file or
+application links; arbitrary shell `Exec` commands are never run.
+
+The desktop shows items from `~/Desktop` alongside the built-in program icons.
+Use its background context menu to add an application link, drag files onto the
+desktop to create file links, or choose **Desktop-Verknüpfung erstellen** in
+the file manager. Right-click an icon to open, inspect, remove an app icon, or
+send a desktop file/link to the trash. Removed files remain recoverable until
+the trash is emptied.
+
+In the file manager, use arrows to select, Enter to open, Backspace to go up,
+F2 to rename, Delete to move selected items to the trash, Ctrl+A to select all,
+Ctrl+C/Ctrl+X/Ctrl+V to copy/cut/paste, and Ctrl+Shift+N to create a folder.
+Drag items onto a folder to move them; hold Ctrl while dropping to copy. These
+operations also work from selection-aware context menus. The trash supports
+multi-item restore and confirmed permanent deletion, including a separately
+confirmed **Papierkorb leeren** action.
 
 ## Phase 7: Profiles, appearance, notifications, and Start
 
@@ -317,12 +339,50 @@ PYTHONPATH=desktop:. \
   python3 -m unittest tests.test_pi_tools -v
 ```
 
+## Phase 10: Erweiterte Dateioperationen
+
+Version 1.2.0 erweitert das Dateisystem-Verhalten des Dateimanagers und des
+Desktops deutlich:
+
+- **Ausschneiden, Kopieren und Einfügen** funktioniert für einzelne und mehrere
+  Dateien und ganze Ordner. Ein ausgeschnittener Eintrag wird nach erfolgreichem
+  Einfügen aus der Zwischenablage entfernt.
+- **Drag & Drop** bewegt oder kopiert Elemente innerhalb eines Fensters, auf
+  Unterordner und zwischen mehreren geöffneten Ordnerfenstern. Ohne Zusatztaste
+  wird verschoben, mit gedrückter Strg-Taste kopiert.
+- **Ziehen auf Desktop-Verknüpfungen**: Wird ein Element auf die Verknüpfung
+  eines Ordners gezogen, landet es per Verschieben oder Kopieren direkt in
+  diesem Ordner. Auf freier Desktopfläche bleibt das Erstellen einer
+  Verknüpfung erhalten.
+- **Fortschrittsfenster**: Große Kopier- und Verschiebevorgänge zeigen einen
+  Fortschrittsdialog mit Abbrechen-Schaltfläche. Kleine Vorgänge laufen ohne
+  Dialog, um den Ablauf nicht zu unterbrechen.
+- **Konfliktdialoge**: Existiert am Ziel bereits ein Element, fragt neonveil nach
+  **Ersetzen**, **Überspringen** oder **Umbenennen**. Über „Für alle folgenden
+  Elemente anwenden“ gilt die Entscheidung für den restlichen Vorgang.
+
+Fehler werden pro Element gesammelt und verständlich gemeldet, zum Beispiel
+fehlende Berechtigungen oder nicht genügend Speicherplatz. Vor einem Vorgang
+wird der freie Speicherplatz geprüft; reicht er nicht, wird die Übertragung
+ohne Datenverlust abgelehnt. Ein Ordner kann nicht in sich selbst kopiert oder
+verschoben werden. Die zentralen Übertragungsroutinen liegen in
+`apps/file_manager/transfer.py` (reine Logik) und
+`apps/file_manager/transfer_ui.py` (Dialoge).
+
+```sh
+PYTHONPATH=desktop:. \
+  QT_QPA_PLATFORM=offscreen \
+  python3 -m unittest tests.test_file_transfer tests.test_z_desktop_interactions -v
+```
+
 ## Project layout
 
 ```text
 apps/                 Built-in Qt applications
 apps/settings/        Wallpaper, audio, and display settings
 apps/file_manager/    Recursive search, file properties, and recoverable trash
+apps/file_manager/transfer.py    Copy/move engine with conflicts, progress, cancel
+apps/file_manager/transfer_ui.py Progress and conflict dialogs
 apps/music_player/    MP3/OGG playlist and playback
 apps/screenshots/     Full-screen capture and Print-key shortcut
 apps/pi_tools/        Local Raspberry Pi network, Bluetooth, GPIO and info tools

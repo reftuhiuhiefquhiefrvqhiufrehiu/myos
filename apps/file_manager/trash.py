@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
@@ -29,7 +31,9 @@ class TrashEntry:
 
 class TrashStore:
     def __init__(self, root: Path | None = None) -> None:
-        self.root = (root or Path.home() / ".local" / "share" / "MyOS" / "Trash").expanduser()
+        self.root = (
+            root or Path.home() / ".local" / "share" / "MyOS" / "Trash"
+        ).expanduser().absolute()
         self.files_path = self.root / "files"
         self.info_path = self.root / "info"
         self.error = ""
@@ -90,9 +94,12 @@ class TrashStore:
         return entries
 
     def restore(self, entry: TrashEntry) -> Path:
+        self._validate_entry(entry)
         if entry.original_path is None:
             raise ValueError("Der ursprüngliche Speicherort ist nicht verfügbar.")
         destination = entry.original_path
+        if not destination.is_absolute():
+            raise ValueError("Der ursprüngliche Speicherort ist ungültig.")
         if destination.exists() or destination.is_symlink():
             suffix = 1
             while True:
@@ -114,14 +121,26 @@ class TrashStore:
             total += self._path_size(entry.stored_path)
         return total
 
+    def delete_permanently(self, entry: TrashEntry) -> None:
+        self._validate_entry(entry)
+        self._remove_path(entry.stored_path)
+        entry.info_path.unlink(missing_ok=True)
+
+    def _validate_entry(self, entry: TrashEntry) -> None:
+        if (
+            entry.stored_path.parent.absolute() != self.files_path.absolute()
+            or entry.info_path.parent.absolute() != self.info_path.absolute()
+            or entry.info_path.name != f"{entry.stored_path.name}.trashinfo"
+        ):
+            raise ValueError("Das Element gehört nicht zu diesem Papierkorb.")
+
     def empty(self) -> list[str]:
         errors: list[str] = []
         if not self.files_path.exists():
             return errors
         for entry in self.entries():
             try:
-                self._remove_path(entry.stored_path)
-                entry.info_path.unlink(missing_ok=True)
+                self.delete_permanently(entry)
             except OSError as error:
                 errors.append(f"{entry.stored_path.name}: {error}")
         return errors
@@ -142,6 +161,24 @@ class TrashStore:
             path.unlink()
 
 
+class TrashListWidget(QListWidget):
+    key_command = Signal(str)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Delete:
+            self.key_command.emit("delete")
+        elif event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            self.key_command.emit("restore")
+        elif (
+            event.key() == Qt.Key.Key_A
+            and event.modifiers()
+            & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        ):
+            self.key_command.emit("select-all")
+        else:
+            super().keyPressEvent(event)
+
+
 class TrashWindow(QMainWindow):
     def __init__(self, store: TrashStore | None = None) -> None:
         super().__init__()
@@ -153,17 +190,25 @@ class TrashWindow(QMainWindow):
         layout = QVBoxLayout(content)
         heading = QLabel("Papierkorb")
         heading.setObjectName("heading")
-        self.items = QListWidget()
+        self.items = TrashListWidget()
+        self.items.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.items.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.items.customContextMenuRequested.connect(self._show_context_menu)
+        self.items.itemDoubleClicked.connect(lambda _item: self.restore_selected())
+        self.items.key_command.connect(self._handle_key_command)
         self.status = QLabel()
         self.status.setWordWrap(True)
         buttons = QHBoxLayout()
         self.restore_button = QPushButton("Wiederherstellen")
         self.restore_button.clicked.connect(self.restore_selected)
+        self.delete_button = QPushButton("Endgültig löschen…")
+        self.delete_button.clicked.connect(self.delete_selected)
         self.empty_button = QPushButton("Papierkorb leeren…")
         self.empty_button.clicked.connect(self.empty_trash)
         self.refresh_button = QPushButton("Aktualisieren")
         self.refresh_button.clicked.connect(self.refresh)
         buttons.addWidget(self.restore_button)
+        buttons.addWidget(self.delete_button)
         buttons.addWidget(self.empty_button)
         buttons.addWidget(self.refresh_button)
         layout.addWidget(heading)
@@ -181,10 +226,16 @@ class TrashWindow(QMainWindow):
         except OSError as error:
             self.status.setText(f"Papierkorb kann nicht gelesen werden: {error}")
             self.restore_button.setEnabled(False)
+            self.delete_button.setEnabled(False)
             self.empty_button.setEnabled(False)
             return
+        errors: list[str] = []
         for entry in entries:
-            size = FileManagerSize.format(self.store._path_size(entry.stored_path))
+            try:
+                size = FileManagerSize.format(self.store._path_size(entry.stored_path))
+            except OSError as error:
+                size = "Größe nicht verfügbar"
+                errors.append(f"{entry.stored_path.name}: {error}")
             original = str(entry.original_path) if entry.original_path else "Ursprung unbekannt"
             item = QListWidgetItem(
                 f"{entry.original_path.name if entry.original_path else entry.stored_path.name}  ·  {size}\n"
@@ -196,23 +247,86 @@ class TrashWindow(QMainWindow):
         self.status.setText(
             f"{len(entries)} Elemente · {total}"
             + (f"\n{self.store.error}" if self.store.error else "")
+            + (f"\n{'; '.join(errors[:3])}" if errors else "")
         )
         self.restore_button.setEnabled(bool(entries))
+        self.delete_button.setEnabled(bool(entries))
         self.empty_button.setEnabled(bool(entries))
 
     def restore_selected(self) -> None:
-        item = self.items.currentItem()
-        if item is None:
+        entries = self._selected_entries()
+        if not entries:
             QMessageBox.information(self, "Nichts ausgewählt", "Wähle ein Element aus.")
             return
-        entry = item.data(Qt.ItemDataRole.UserRole)
-        try:
-            destination = self.store.restore(entry)
-        except (OSError, ValueError) as error:
-            QMessageBox.critical(self, "Wiederherstellen fehlgeschlagen", str(error))
-            return
-        self.status.setText(f"Wiederhergestellt: {destination}")
+        restored: list[str] = []
+        errors: list[str] = []
+        for entry in entries:
+            try:
+                destination = self.store.restore(entry)
+                restored.append(str(destination))
+            except (OSError, ValueError) as error:
+                errors.append(f"{entry.stored_path.name}: {error}")
+        self.status.setText(
+            f"Wiederhergestellt: {', '.join(restored[:3])}"
+            + (f"\nFehler: {'; '.join(errors[:3])}" if errors else "")
+        )
         self.refresh()
+
+    def _selected_entries(self) -> list[TrashEntry]:
+        return [
+            item.data(Qt.ItemDataRole.UserRole)
+            for item in self.items.selectedItems()
+        ]
+
+    def _handle_key_command(self, command: str) -> None:
+        if command == "delete":
+            self.delete_selected()
+        elif command == "restore":
+            self.restore_selected()
+        elif command == "select-all":
+            self.items.selectAll()
+
+    def delete_selected(self) -> None:
+        entries = self._selected_entries()
+        if not entries:
+            QMessageBox.information(self, "Nichts ausgewählt", "Wähle ein Element aus.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Elemente endgültig löschen",
+            f"{len(entries)} Element(e) endgültig löschen? Dieser Vorgang kann nicht rückgängig gemacht werden.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        errors = []
+        for entry in entries:
+            try:
+                self.store.delete_permanently(entry)
+            except (OSError, ValueError) as error:
+                errors.append(f"{entry.stored_path.name}: {error}")
+        if errors:
+            QMessageBox.warning(
+                self, "Einige Elemente konnten nicht gelöscht werden", "\n".join(errors[:8])
+            )
+        self.refresh()
+
+    def _show_context_menu(self, position) -> None:
+        item = self.items.itemAt(position)
+        if item is None:
+            self.items.clearSelection()
+            return
+        if not item.isSelected():
+            self.items.clearSelection()
+            item.setSelected(True)
+            self.items.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        menu.addAction("Wiederherstellen", self.restore_selected)
+        menu.addAction("Endgültig löschen…", self.delete_selected)
+        menu.addAction("Papierkorb leeren…", self.empty_trash)
+        menu.exec(self.items.mapToGlobal(position))
 
     def empty_trash(self) -> None:
         answer = QMessageBox.question(
@@ -233,6 +347,21 @@ class TrashWindow(QMainWindow):
                 + "\n".join(errors[:8]),
             )
         self.refresh()
+
+    def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Delete:
+            self.delete_selected()
+            return
+        if event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            self.restore_selected()
+            return
+        if (
+            event.key() == Qt.Key.Key_A
+            and event.modifiers() & Qt.KeyboardModifier.ControlModifier
+        ):
+            self.items.selectAll()
+            return
+        super().keyPressEvent(event)
 
 
 class FileManagerSize:

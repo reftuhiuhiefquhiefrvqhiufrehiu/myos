@@ -4,7 +4,8 @@ import shutil
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QFileInfo, Qt
+from PySide6.QtCore import QFileInfo, QMimeData, QUrl, Qt, Signal
+from PySide6.QtGui import QKeyEvent
 from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
@@ -15,13 +16,110 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMenu,
     QMainWindow,
+    QInputDialog,
     QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
+from apps.file_manager.shortcuts import create_desktop_shortcut
+from apps.file_manager.transfer import (
+    TransferResult,
+    transfer_items,
+)
+from apps.file_manager.transfer_ui import run_transfer
 from apps.file_manager.trash import TrashStore
+
+
+class FileListWidget(QListWidget):
+    paths_dropped = Signal(object, object, bool)
+    key_command = Signal(str)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
+        self.setDragEnabled(True)
+        self.setAcceptDrops(True)
+        self.setDropIndicatorShown(True)
+        self.setDefaultDropAction(Qt.DropAction.MoveAction)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        key = event.key()
+        modifiers = event.modifiers()
+        control = bool(
+            modifiers
+            & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.MetaModifier)
+        )
+        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        command = None
+        if control and key == Qt.Key.Key_C:
+            command = "copy"
+        elif control and key == Qt.Key.Key_X:
+            command = "cut"
+        elif control and key == Qt.Key.Key_V:
+            command = "paste"
+        elif control and key == Qt.Key.Key_A:
+            command = "select-all"
+        elif control and shift and key == Qt.Key.Key_N:
+            command = "new-folder"
+        elif key == Qt.Key.Key_Delete:
+            command = "delete"
+        elif key == Qt.Key.Key_F2:
+            command = "rename"
+        elif key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            command = "open"
+        elif key in {Qt.Key.Key_Backspace, Qt.Key.Key_Left} and (
+            key == Qt.Key.Key_Backspace
+            or modifiers & Qt.KeyboardModifier.AltModifier
+        ):
+            command = "back"
+        if command is None:
+            super().keyPressEvent(event)
+        else:
+            self.key_command.emit(command)
+            event.accept()
+
+    def mimeData(self, items: list[QListWidgetItem]) -> QMimeData:
+        mime_data = QMimeData()
+        mime_data.setUrls(
+            [
+                QUrl.fromLocalFile(item.data(Qt.ItemDataRole.UserRole))
+                for item in items
+            ]
+        )
+        return mime_data
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragEnterEvent(event)
+
+    def dragMoveEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        super().dragMoveEvent(event)
+
+    def dropEvent(self, event) -> None:
+        if not event.mimeData().hasUrls():
+            super().dropEvent(event)
+            return
+        item = self.itemAt(event.position().toPoint())
+        destination = (
+            Path(item.data(Qt.ItemDataRole.UserRole))
+            if item is not None
+            and Path(item.data(Qt.ItemDataRole.UserRole)).is_dir()
+            else None
+        )
+        paths = [Path(url.toLocalFile()) for url in event.mimeData().urls() if url.isLocalFile()]
+        if paths:
+            copy = bool(event.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+            self.paths_dropped.emit(paths, destination, copy)
+            event.acceptProposedAction()
+            return
+        event.ignore()
 
 
 class FileManagerWindow(QMainWindow):
@@ -31,6 +129,7 @@ class FileManagerWindow(QMainWindow):
         start_path: Path | None = None,
         open_trash: Callable[[], None] | None = None,
         trash_store: TrashStore | None = None,
+        desktop_path: Path | None = None,
     ) -> None:
         super().__init__()
         self.setWindowTitle("Dateien")
@@ -39,6 +138,7 @@ class FileManagerWindow(QMainWindow):
         self._open_file = open_file
         self._open_trash = open_trash
         self.trash_store = trash_store or TrashStore()
+        self.desktop_path = desktop_path or (Path.home() / "Desktop")
         self._search_root: Path | None = None
         self.current_path = (start_path or Path.home()).expanduser().absolute()
 
@@ -73,10 +173,13 @@ class FileManagerWindow(QMainWindow):
         search_row.addWidget(search_button)
         search_row.addWidget(self.clear_search_button)
 
-        self.items = QListWidget()
+        self.items = FileListWidget()
         self.items.itemDoubleClicked.connect(self._activate_item)
         self.items.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.items.customContextMenuRequested.connect(self._show_context_menu)
+        self.items.paths_dropped.connect(self._drop_paths)
+        self.items.key_command.connect(self._handle_list_key)
+        self.items.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         actions = QHBoxLayout()
         for text, callback in (
@@ -145,14 +248,21 @@ class FileManagerWindow(QMainWindow):
         self._transfer_selected(move=True)
 
     def delete_selected(self) -> None:
-        source = self._selected_path()
-        if source is None:
+        sources = self._selected_paths()
+        if not sources:
             return
-        try:
-            self.trash_store.move_to_trash(source)
-        except (OSError, ValueError) as error:
-            self._show_error("Element kann nicht in den Papierkorb verschoben werden", error)
-            return
+        errors = []
+        for source in sources:
+            try:
+                self.trash_store.move_to_trash(source)
+            except (OSError, ValueError) as error:
+                errors.append(f"{source.name}: {error}")
+        if errors:
+            QMessageBox.warning(
+                self,
+                "Elemente konnten nicht gelöscht werden",
+                "\n".join(errors[:8]),
+            )
         self.refresh()
 
     def search(self) -> None:
@@ -242,20 +352,43 @@ class FileManagerWindow(QMainWindow):
 
     def _show_context_menu(self, position) -> None:
         item = self.items.itemAt(position)
-        if item is None:
-            return
-        self.items.setCurrentItem(item)
-        path = Path(item.data(Qt.ItemDataRole.UserRole))
-        menu = QMenu(self)
-        if path.is_dir():
-            open_action = menu.addAction("Öffnen")
-            open_action.triggered.connect(lambda: self._activate_item(item))
-        else:
-            open_action = menu.addAction("Öffnen")
-            open_action.triggered.connect(lambda: self._open_file(str(path)))
-        properties_action = menu.addAction("Eigenschaften")
-        properties_action.triggered.connect(lambda: self.show_properties(path))
+        menu = self._build_context_menu(item)
         menu.exec(self.items.mapToGlobal(position))
+
+    def _build_context_menu(self, item: QListWidgetItem | None) -> QMenu:
+        if item is None:
+            self.items.clearSelection()
+            menu = QMenu(self)
+            menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            menu.addAction("Neuer Ordner…", self.create_folder)
+            menu.addAction("Einfügen", self.paste_clipboard).setEnabled(
+                self._clipboard_has_urls()
+            )
+            menu.addAction("Aktualisieren", self.refresh)
+            return menu
+        if not item.isSelected():
+            self.items.clearSelection()
+            item.setSelected(True)
+            self.items.setCurrentItem(item)
+        paths = self._selected_paths()
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        if len(paths) == 1:
+            menu.addAction("Öffnen", lambda: self._open_path(paths[0]))
+            menu.addAction("Eigenschaften", lambda: self.show_properties(paths[0]))
+            menu.addAction("Umbenennen…", self.rename_selected)
+            menu.addAction(
+                "Desktop-Verknüpfung erstellen",
+                lambda: self.create_desktop_shortcut(paths[0]),
+            )
+        menu.addSeparator()
+        menu.addAction("Kopieren", self.copy_to_clipboard)
+        menu.addAction("Ausschneiden", self.cut_to_clipboard)
+        menu.addAction("Einfügen", self.paste_clipboard).setEnabled(
+            self._clipboard_has_urls()
+        )
+        menu.addAction("Löschen", self.delete_selected)
+        return menu
 
     def _show_trash(self) -> None:
         if self._open_trash is not None:
@@ -297,10 +430,19 @@ class FileManagerWindow(QMainWindow):
 
     def _activate_item(self, item: QListWidgetItem) -> None:
         path = Path(item.data(Qt.ItemDataRole.UserRole))
+        self._open_path(path)
+
+    def _open_path(self, path: Path) -> None:
         if path.is_dir():
             self._change_directory(path)
         else:
             self._open_file(str(path))
+
+    def _selected_paths(self) -> list[Path]:
+        return [
+            Path(item.data(Qt.ItemDataRole.UserRole))
+            for item in self.items.selectedItems()
+        ]
 
     def _selected_path(self) -> Path | None:
         item = self.items.currentItem()
@@ -311,9 +453,153 @@ class FileManagerWindow(QMainWindow):
             return None
         return Path(item.data(Qt.ItemDataRole.UserRole))
 
-    def _transfer_selected(self, move: bool) -> None:
+    def create_folder(self) -> None:
+        name, accepted = QInputDialog.getText(
+            self, "Neuen Ordner erstellen", "Ordnername:"
+        )
+        if not accepted or not name:
+            return
+        if Path(name).name != name or name in {".", ".."}:
+            QMessageBox.warning(
+                self, "Ungültiger Ordnername", "Gib einen einzelnen Ordnernamen ein."
+            )
+            return
+        destination = self.current_path / name
+        try:
+            destination.mkdir()
+        except OSError as error:
+            self._show_error("Ordner kann nicht erstellt werden", error)
+            return
+        self.refresh()
+
+    def rename_selected(self) -> None:
         source = self._selected_path()
         if source is None:
+            return
+        name, accepted = QInputDialog.getText(
+            self, "Element umbenennen", "Neuer Name:", text=source.name
+        )
+        if not accepted or not name:
+            return
+        if Path(name).name != name or name in {".", ".."}:
+            QMessageBox.warning(
+                self, "Ungültiger Name", "Gib einen einzelnen Datei- oder Ordnernamen ein."
+            )
+            return
+        destination = source.with_name(name)
+        if destination == source:
+            return
+        if destination.exists() or destination.is_symlink():
+            QMessageBox.warning(
+                self, "Name bereits vorhanden", f"„{destination.name}“ existiert bereits."
+            )
+            return
+        try:
+            source.rename(destination)
+        except OSError as error:
+            self._show_error("Element kann nicht umbenannt werden", error)
+            return
+        self.refresh()
+
+    def create_desktop_shortcut(self, source: Path) -> Path | None:
+        if not source.exists() and not source.is_symlink():
+            QMessageBox.warning(self, "Datei nicht gefunden", str(source))
+            return None
+        try:
+            result = create_desktop_shortcut(
+                self.desktop_path, source.stem, target=source
+            )
+        except (OSError, ValueError) as error:
+            self._show_error("Desktop-Verknüpfung kann nicht erstellt werden", error)
+            return None
+        return result
+
+    def copy_to_clipboard(self) -> None:
+        self._set_clipboard(cut=False)
+
+    def cut_to_clipboard(self) -> None:
+        self._set_clipboard(cut=True)
+
+    def _set_clipboard(self, *, cut: bool) -> None:
+        paths = self._selected_paths()
+        if not paths:
+            return
+        mime_data = QMimeData()
+        mime_data.setUrls([QUrl.fromLocalFile(str(path)) for path in paths])
+        if cut:
+            mime_data.setData("application/x-myos-cut", b"1")
+        QApplication.clipboard().setMimeData(mime_data)
+
+    def paste_clipboard(self) -> None:
+        mime_data = QApplication.clipboard().mimeData()
+        if mime_data is None:
+            return
+        paths = [Path(url.toLocalFile()) for url in mime_data.urls() if url.isLocalFile()]
+        if not paths:
+            return
+        cut = mime_data.hasFormat("application/x-myos-cut")
+        result = self._drop_paths(paths, self.current_path, not cut)
+        if (
+            cut
+            and result is not None
+            and result.moved
+            and not result.cancelled
+            and not result.errors
+        ):
+            QApplication.clipboard().clear()
+
+    @staticmethod
+    def _clipboard_has_urls() -> bool:
+        mime_data = QApplication.clipboard().mimeData()
+        return mime_data is not None and mime_data.hasUrls()
+
+    def _drop_paths(
+        self,
+        paths: list[Path],
+        destination: Path | None,
+        copy: bool,
+        *,
+        conflict_handler: Callable[[Path, Path], object] | None = None,
+        progress: Callable[[int, int, str], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+    ) -> TransferResult:
+        target_directory = destination or self.current_path
+        if conflict_handler is None:
+            result = run_transfer(
+                self, paths, target_directory, move=not copy
+            )
+        else:
+            result = transfer_items(
+                paths,
+                target_directory,
+                move=not copy,
+                decide_conflict=conflict_handler,
+                progress=progress,
+                should_cancel=should_cancel,
+            )
+            self._show_transfer_errors(result.errors)
+        self._after_transfer(result)
+        self.refresh()
+        return result
+
+    def _after_transfer(self, result: TransferResult) -> None:
+        if result.cancelled:
+            self.statusBar().showMessage(
+                f"Übertragung abgebrochen — {result.summary()}", 6000
+            )
+        elif result.changed:
+            self.statusBar().showMessage(result.summary(), 6000)
+
+    def _show_transfer_errors(self, errors: list[str]) -> None:
+        if errors:
+            QMessageBox.warning(
+                self, "Einige Elemente konnten nicht übertragen werden", "\n".join(errors[:8])
+            )
+
+    def _transfer_selected(self, move: bool) -> None:
+        sources = self._selected_paths()
+        if not sources:
+            self._selected_path()
             return
         destination = QFileDialog.getExistingDirectory(
             self,
@@ -322,23 +608,7 @@ class FileManagerWindow(QMainWindow):
         )
         if not destination:
             return
-        target = Path(destination) / source.name
-        if source == target or source in target.parents:
-            QMessageBox.warning(
-                self, "Ungültiger Zielordner", "Der Zielordner liegt innerhalb der Quelle."
-            )
-            return
-        try:
-            self.transfer_path(source, target, move)
-        except OSError as error:
-            self._show_error(
-                "Element kann nicht verschoben werden"
-                if move
-                else "Element kann nicht kopiert werden",
-                error,
-            )
-            return
-        self.refresh()
+        self._drop_paths(sources, Path(destination), copy=not move)
 
     @staticmethod
     def transfer_path(source: Path, target: Path, move: bool) -> None:
@@ -351,3 +621,50 @@ class FileManagerWindow(QMainWindow):
 
     def _show_error(self, title: str, error: OSError) -> None:
         QMessageBox.critical(self, title, str(error))
+
+    def _activate_current(self) -> None:
+        item = self.items.currentItem()
+        if item is not None:
+            self._activate_item(item)
+
+    def _handle_list_key(self, command: str) -> None:
+        actions = {
+            "copy": self.copy_to_clipboard,
+            "cut": self.cut_to_clipboard,
+            "paste": self.paste_clipboard,
+            "select-all": self.items.selectAll,
+            "new-folder": self.create_folder,
+            "delete": self.delete_selected,
+            "rename": self.rename_selected,
+            "open": self._activate_current,
+            "back": self.go_back,
+        }
+        actions[command]()
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        key = event.key()
+        modifiers = event.modifiers()
+        control = bool(modifiers & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(modifiers & Qt.KeyboardModifier.ShiftModifier)
+        if control and key == Qt.Key.Key_C:
+            self.copy_to_clipboard()
+        elif control and key == Qt.Key.Key_X:
+            self.cut_to_clipboard()
+        elif control and key == Qt.Key.Key_V:
+            self.paste_clipboard()
+        elif control and key == Qt.Key.Key_A:
+            self.items.selectAll()
+        elif control and shift and key == Qt.Key.Key_N:
+            self.create_folder()
+        elif key == Qt.Key.Key_Delete:
+            self.delete_selected()
+        elif key == Qt.Key.Key_Backspace:
+            self.go_back()
+        elif key == Qt.Key.Key_F2:
+            self.rename_selected()
+        elif key in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            item = self.items.currentItem()
+            if item is not None:
+                self._activate_item(item)
+        else:
+            super().keyPressEvent(event)

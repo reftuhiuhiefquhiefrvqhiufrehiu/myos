@@ -1,17 +1,117 @@
-from PySide6.QtCore import QSettings, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen, QPixmap
+import mimetypes
+from datetime import datetime
+from pathlib import Path
+
+from PySide6.QtCore import QFileInfo, QSettings, QSize, Qt, Signal
+from PySide6.QtGui import (
+    QColor,
+    QKeyEvent,
+    QLinearGradient,
+    QPainter,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMenu,
+    QMessageBox,
     QVBoxLayout,
     QWidget,
 )
 
+from apps.file_manager.shortcuts import create_desktop_shortcut, read_desktop_shortcut
+from apps.file_manager.transfer_ui import run_transfer
+from apps.file_manager.trash import TrashStore
+
+
+class DesktopShortcutList(QListWidget):
+    files_dropped = Signal(object)
+    paths_dropped_into = Signal(object, object, bool)
+    key_command = Signal(str)
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setDragEnabled(True)
+        self.setDropIndicatorShown(False)
+
+    def mimeData(self, items: list[QListWidgetItem]):
+        from PySide6.QtCore import QMimeData, QUrl
+
+        mime_data = QMimeData()
+        mime_data.setUrls(
+            [
+                QUrl.fromLocalFile(item.data(Qt.ItemDataRole.UserRole + 1))
+                for item in items
+                if item.data(Qt.ItemDataRole.UserRole + 1)
+            ]
+        )
+        return mime_data
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            return
+        event.ignore()
+
+    def dragMoveEvent(self, event) -> None:
+        self.dragEnterEvent(event)
+
+    def dropEvent(self, event) -> None:
+        paths = [
+            Path(url.toLocalFile())
+            for url in event.mimeData().urls()
+            if url.isLocalFile()
+        ]
+        if not paths:
+            event.ignore()
+            return
+        copy = bool(event.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
+        target_directory = self._folder_target_at(event.position().toPoint())
+        if target_directory is not None:
+            self.paths_dropped_into.emit(paths, target_directory, copy)
+            event.acceptProposedAction()
+            return
+        self.files_dropped.emit(paths)
+        event.acceptProposedAction()
+
+    def _folder_target_at(self, position) -> Path | None:
+        return self._folder_target_for_item(self.itemAt(position))
+
+    def _folder_target_for_item(self, item: QListWidgetItem | None) -> Path | None:
+        if item is None:
+            return None
+        value = item.data(Qt.ItemDataRole.UserRole)
+        if not value or not value.startswith("file:"):
+            return None
+        path = Path(value.removeprefix("file:"))
+        if path.suffix.casefold() == ".desktop":
+            try:
+                target, app_id = read_desktop_shortcut(path)
+            except (OSError, ValueError):
+                return None
+            if app_id is None and target is not None and target.is_dir():
+                return target
+            return None
+        if path.is_dir():
+            return path
+        return None
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Delete:
+            self.key_command.emit("delete")
+        elif event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
+            self.key_command.emit("open")
+        else:
+            super().keyPressEvent(event)
+
 
 class DesktopShell(QWidget):
     application_requested = Signal(str)
+    file_requested = Signal(str)
 
     APPLICATIONS = (
         ("files", "Dateien"),
@@ -43,7 +143,12 @@ class DesktopShell(QWidget):
         "update-manager": "MyOS Update Manager",
     }
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        desktop_path: Path | None = None,
+        trash_store: TrashStore | None = None,
+        settings: QSettings | None = None,
+    ) -> None:
         super().__init__(
             None,
             Qt.WindowType.Window
@@ -51,7 +156,10 @@ class DesktopShell(QWidget):
             | Qt.WindowType.WindowStaysOnBottomHint,
         )
         self.setWindowTitle("neonveil")
-        preferences = QSettings("neonveil", "neonveil")
+        preferences = settings or QSettings("neonveil", "neonveil")
+        self.preferences = preferences
+        self.desktop_path = (desktop_path or Path.home() / "Desktop").expanduser().absolute()
+        self.trash_store = trash_store or TrashStore()
         self.wallpaper_style = preferences.value("wallpaper/style", "lagoon", type=str)
         self.wallpaper_image_path = preferences.value("wallpaper/image", "", type=str)
         self.wallpaper_pixmap = (
@@ -66,14 +174,13 @@ class DesktopShell(QWidget):
         else:
             self.resize(1024, 768)
 
-        self.shortcuts = QListWidget(self)
+        self.shortcuts = DesktopShortcutList(self)
         self.shortcuts.setViewMode(QListWidget.ViewMode.IconMode)
         self.shortcuts.setFlow(QListWidget.Flow.TopToBottom)
         self.shortcuts.setMovement(QListWidget.Movement.Static)
         self.shortcuts.setResizeMode(QListWidget.ResizeMode.Adjust)
         self.shortcuts.setIconSize(QSize(40, 40))
         self.shortcuts.setGridSize(QSize(110, 78))
-        self.shortcuts.setFixedWidth(132)
         self.shortcuts.setStyleSheet(
             """
             QListWidget {
@@ -98,28 +205,71 @@ class DesktopShell(QWidget):
             }
             """
         )
-        for app_id, label in self.APPLICATIONS:
-            standard_icons = {
-                "files": self.style().StandardPixmap.SP_DirIcon,
-                "editor": self.style().StandardPixmap.SP_FileIcon,
-                "pictures": self.style().StandardPixmap.SP_DesktopIcon,
-                "clock": self.style().StandardPixmap.SP_ComputerIcon,
-                "terminal": self.style().StandardPixmap.SP_ComputerIcon,
-                "code": self.style().StandardPixmap.SP_FileIcon,
-                "browser": self.style().StandardPixmap.SP_DesktopIcon,
-                "downloads": getattr(
-                    self.style().StandardPixmap,
-                    "SP_DownloadIcon",
-                    self.style().StandardPixmap.SP_DirIcon,
-                ),
-            }
-            standard_icon = standard_icons[app_id]
-            item = QListWidgetItem(self.style().standardIcon(standard_icon), label)
-            item.setData(Qt.ItemDataRole.UserRole, app_id)
-            item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
-            item.setToolTip(f"{label} öffnen")
-            self.shortcuts.addItem(item)
+        self.shortcuts.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.shortcuts.customContextMenuRequested.connect(self._show_shortcut_menu)
+        self.shortcuts.files_dropped.connect(self.create_file_shortcuts)
+        self.shortcuts.paths_dropped_into.connect(self._drop_into_folder)
+        self.shortcuts.key_command.connect(self._handle_shortcut_key)
+        self.refresh_shortcuts()
         self.shortcuts.itemDoubleClicked.connect(self._open_shortcut)
+
+    def refresh_shortcuts(self) -> None:
+        self.shortcuts.clear()
+        hidden = set(self.preferences.value("desktop/hidden_app_shortcuts", [], type=list))
+        standard_icons = {
+            "files": self.style().StandardPixmap.SP_DirIcon,
+            "editor": self.style().StandardPixmap.SP_FileIcon,
+            "pictures": self.style().StandardPixmap.SP_DesktopIcon,
+            "clock": self.style().StandardPixmap.SP_ComputerIcon,
+            "terminal": self.style().StandardPixmap.SP_ComputerIcon,
+            "code": self.style().StandardPixmap.SP_FileIcon,
+            "browser": self.style().StandardPixmap.SP_DesktopIcon,
+            "downloads": getattr(
+                self.style().StandardPixmap,
+                "SP_DownloadIcon",
+                self.style().StandardPixmap.SP_DirIcon,
+            ),
+        }
+        for app_id, label in self.APPLICATIONS:
+            if app_id not in hidden:
+                item = QListWidgetItem(
+                    self.style().standardIcon(standard_icons[app_id]), label
+                )
+                item.setData(Qt.ItemDataRole.UserRole, f"app:{app_id}")
+                item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+                item.setToolTip(f"{label} öffnen")
+                self.shortcuts.addItem(item)
+
+        if not self.desktop_path.is_dir():
+            self._resize_shortcut_grid()
+            return
+        try:
+            paths = sorted(
+                self.desktop_path.iterdir(), key=lambda value: value.name.casefold()
+            )
+        except OSError as error:
+            QMessageBox.warning(self, "Desktop-Ordner kann nicht gelesen werden", str(error))
+            self._resize_shortcut_grid()
+            return
+        for path in paths:
+            if path.name.startswith("."):
+                continue
+            label = path.stem if path.suffix.casefold() == ".desktop" else path.name
+            icon_kind = (
+                self.style().StandardPixmap.SP_DirIcon
+                if path.is_dir()
+                else self.style().StandardPixmap.SP_FileIcon
+            )
+            item = QListWidgetItem(self.style().standardIcon(icon_kind), label)
+            item.setData(Qt.ItemDataRole.UserRole, f"file:{path}")
+            item.setData(Qt.ItemDataRole.UserRole + 1, str(path))
+            item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
+            item.setToolTip(str(path))
+            self.shortcuts.addItem(item)
+        self._resize_shortcut_grid()
+
+    def _resize_shortcut_grid(self) -> None:
+        self.shortcuts.setFixedWidth(max(0, self.width() - 36))
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
@@ -182,11 +332,170 @@ class DesktopShell(QWidget):
         painter.fillRect(self.rect(), gradient)
 
     def resizeEvent(self, event) -> None:
-        self.shortcuts.setGeometry(18, 18, 132, max(0, self.height() - 90))
+        self._resize_shortcut_grid()
+        self.shortcuts.setGeometry(
+            18, 18, max(0, self.width() - 36), max(0, self.height() - 90)
+        )
         super().resizeEvent(event)
 
     def _open_shortcut(self, item: QListWidgetItem) -> None:
-        self.application_requested.emit(item.data(Qt.ItemDataRole.UserRole))
+        value = item.data(Qt.ItemDataRole.UserRole)
+        if value.startswith("app:"):
+            self.application_requested.emit(value.removeprefix("app:"))
+            return
+        path = Path(value.removeprefix("file:"))
+        if path.suffix.casefold() == ".desktop":
+            try:
+                target, app_id = read_desktop_shortcut(path)
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, "Verknüpfung kann nicht geöffnet werden", str(error))
+                return
+            if app_id is not None:
+                self.application_requested.emit(app_id)
+            elif target is not None:
+                self.file_requested.emit(str(target))
+            return
+        self.file_requested.emit(str(path))
+
+    def create_file_shortcuts(self, paths: list[Path]) -> None:
+        errors = []
+        for path in paths:
+            if not path.exists() and not path.is_symlink():
+                errors.append(f"{path}: Datei nicht gefunden.")
+                continue
+            try:
+                create_desktop_shortcut(self.desktop_path, path.stem, target=path)
+            except (OSError, ValueError) as error:
+                errors.append(f"{path.name}: {error}")
+        self.refresh_shortcuts()
+        if errors:
+            QMessageBox.warning(
+                self,
+                "Desktop-Verknüpfung teilweise erstellt",
+                "\n".join(errors[:8]),
+            )
+
+    def _drop_into_folder(
+        self, paths: list[Path], target_directory: Path, copy: bool
+    ) -> None:
+        run_transfer(self, paths, Path(target_directory), move=not copy)
+        self.refresh_shortcuts()
+
+    def create_application_shortcut(self, app_id: str) -> None:
+        if app_id not in self.APPLICATION_TITLES:
+            QMessageBox.warning(self, "Unbekannte Anwendung", app_id)
+            return
+        try:
+            create_desktop_shortcut(
+                self.desktop_path,
+                self.application_title(app_id),
+                app_id=app_id,
+            )
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(
+                self, "Verknüpfung kann nicht erstellt werden", str(error)
+            )
+            return
+        self.refresh_shortcuts()
+
+    def _show_shortcut_menu(self, position) -> None:
+        item = self.shortcuts.itemAt(position)
+        menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        if item is not None:
+            if not item.isSelected():
+                self.shortcuts.setCurrentItem(item)
+            value = item.data(Qt.ItemDataRole.UserRole)
+            menu.addAction("Öffnen", lambda: self._open_shortcut(item))
+            if value.startswith("app:"):
+                menu.addAction("Verknüpfung entfernen", self._remove_app_shortcut)
+            else:
+                path = Path(value.removeprefix("file:"))
+                if path.suffix.casefold() == ".desktop":
+                    menu.addAction("Verknüpfung entfernen", lambda: self._trash_path(path))
+                else:
+                    menu.addAction("In Papierkorb verschieben", lambda: self._trash_path(path))
+                    menu.addAction("Eigenschaften", lambda: self._show_file_properties(path))
+        else:
+            create_menu = menu.addMenu("Verknüpfung erstellen")
+            for app_id, title in sorted(
+                self.APPLICATION_TITLES.items(), key=lambda pair: pair[1].casefold()
+            ):
+                if app_id == "welcome":
+                    continue
+                create_menu.addAction(
+                    title, lambda selected_app=app_id: self.create_application_shortcut(selected_app)
+                )
+        if not menu.isEmpty():
+            menu.exec(self.shortcuts.mapToGlobal(position))
+
+    def _remove_app_shortcut(self) -> None:
+        item = self.shortcuts.currentItem()
+        if item is None:
+            return
+        app_id = item.data(Qt.ItemDataRole.UserRole).removeprefix("app:")
+        hidden = set(self.preferences.value("desktop/hidden_app_shortcuts", [], type=list))
+        hidden.add(app_id)
+        self.preferences.setValue("desktop/hidden_app_shortcuts", sorted(hidden))
+        self.refresh_shortcuts()
+
+    def _trash_path(self, path: Path) -> None:
+        try:
+            self.trash_store.move_to_trash(path)
+        except (OSError, ValueError) as error:
+            QMessageBox.critical(self, "Element kann nicht entfernt werden", str(error))
+            return
+        self.refresh_shortcuts()
+
+    def _show_file_properties(self, path: Path) -> None:
+        try:
+            info = path.stat()
+            size = self.trash_store._path_size(path)
+        except OSError as error:
+            QMessageBox.critical(self, "Eigenschaften nicht verfügbar", str(error))
+            return
+        file_type = (
+            "Ordner"
+            if path.is_dir()
+            else mimetypes.guess_type(path.name)[0] or "Unbekannter Dateityp"
+        )
+        birth_time = QFileInfo(str(path)).birthTime()
+        if birth_time.isValid():
+            created = birth_time.toLocalTime().toString("dd.MM.yyyy HH:mm")
+        else:
+            created = (
+                datetime.fromtimestamp(info.st_birthtime).astimezone().strftime("%d.%m.%Y %H:%M")
+                if hasattr(info, "st_birthtime")
+                else "Nicht vom Dateisystem bereitgestellt"
+            )
+        QMessageBox.information(
+            self,
+            f"Eigenschaften – {path.name}",
+            f"Größe: {size} Byte\nDateityp: {file_type}\n"
+            f"Speicherort: {path.parent}\nErstellungsdatum: {created}\n"
+            f"Änderungsdatum: {datetime.fromtimestamp(info.st_mtime).astimezone().strftime('%d.%m.%Y %H:%M')}",
+        )
+
+    def _activate_current(self) -> None:
+        item = self.shortcuts.currentItem()
+        if item is not None:
+            self._open_shortcut(item)
+
+    def _handle_shortcut_key(self, command: str) -> None:
+        if command == "delete":
+            self._delete_current()
+        elif command == "open":
+            self._activate_current()
+
+    def _delete_current(self) -> None:
+        item = self.shortcuts.currentItem()
+        if item is None:
+            return
+        value = item.data(Qt.ItemDataRole.UserRole)
+        if value.startswith("app:"):
+            self._remove_app_shortcut()
+        else:
+            self._trash_path(Path(value.removeprefix("file:")))
 
     @classmethod
     def application_title(cls, app_id: str) -> str:
