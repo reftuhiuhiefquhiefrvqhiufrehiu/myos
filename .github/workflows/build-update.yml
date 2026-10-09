@@ -48,7 +48,7 @@ jobs:
               raise SystemExit("A stable release cannot use a prerelease version")
           PY
           PYTHONPATH=desktop:. QT_QPA_PLATFORM=offscreen \
-            python -m unittest discover -s tests -v
+            python tests/run_tests.py
       - name: Select release channel
         id: channel
         env:

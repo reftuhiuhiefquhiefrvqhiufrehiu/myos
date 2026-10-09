@@ -16,7 +16,7 @@ if platform.system() == "Linux":
         "--no-sandbox --disable-gpu --disable-dev-shm-usage",
     )
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
 
@@ -164,14 +164,6 @@ def main() -> int:
         taskbar.add_window(window)
         window.show()
         taskbar.raise_()
-        fade = QPropertyAnimation(window, b"windowOpacity", window)
-        fade.setDuration(160)
-        fade.setStartValue(0.0)
-        fade.setEndValue(1.0)
-        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
-        fade.finished.connect(fade.deleteLater)
-        window._neonveil_fade = fade
-        fade.start()
 
     def apply_child_theme(window: QWidget, theme: str) -> None:
         if theme == "dark":

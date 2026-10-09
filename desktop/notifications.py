@@ -3,8 +3,6 @@ from datetime import datetime
 from typing import Callable
 
 from PySide6.QtCore import (
-    QEasingCurve,
-    QPropertyAnimation,
     QSettings,
     Qt,
     QTimer,
@@ -110,11 +108,6 @@ class NotificationPopup(QWidget):
         self.actions_widget.hide()
         layout.addWidget(self.actions_widget)
         self._action_buttons: list[QPushButton] = []
-        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
-        self._fade.setDuration(180)
-        self._fade.setStartValue(0.0)
-        self._fade.setEndValue(1.0)
-        self._fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.set_theme("light")
         self.dismiss_timer = QTimer(self)
         self.dismiss_timer.setSingleShot(True)
@@ -148,8 +141,6 @@ class NotificationPopup(QWidget):
             self.move(area.right() - self.width() - 12, area.bottom() - self.height() - 58)
         self.show()
         self.raise_()
-        self._fade.stop()
-        self._fade.start()
         self.dismiss_timer.start(max(1000, duration_ms))
 
     def _run_action(self, callback: Callable[[], None]) -> None:

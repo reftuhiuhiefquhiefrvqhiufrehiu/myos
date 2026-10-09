@@ -189,8 +189,12 @@ tests can be run with the desktop shell tests on a Debian Trixie host:
 ```sh
 PYTHONPATH=desktop:. \
   QT_QPA_PLATFORM=offscreen \
-  python3 -m unittest tests.test_desktop tests.test_phase6_settings -v
+  python3 tests/run_tests.py
 ```
+
+`tests/run_tests.py` runs the same suite but exits without the fragile Qt
+global teardown, which can otherwise abort the process after browser
+(QtWebEngine) tests on some Linux/Qt combinations.
 
 Runtime packages include `alsa-utils` for volume control. `xrandr` is supplied
 by the existing `x11-xserver-utils` package. These are staged automatically by
@@ -393,9 +397,8 @@ hardens it at runtime:
   duplicated hex lists.
 - **Richer visual layer.** The taskbar now uses a gradient surface, a glowing
   Start button, an accent underline for the active window, and a date next to
-  the clock. The desktop background adds a soft neon bloom and vignette. Windows
-  fade in when they open, and notification popups are rounded cards with a neon
-  accent stripe, a drop shadow, and a fade-in.
+  the clock. The desktop background adds a soft neon bloom and vignette.
+  Notification popups are rounded cards with a neon accent stripe.
 - **Runtime hardening.** `desktop/logging_setup.py` writes a rotating log to
   `~/.local/share/NeonVeil/logs/neonveil.log`, routes Qt messages into the log,
   and installs an exception hook that records uncaught errors and shows a clear
