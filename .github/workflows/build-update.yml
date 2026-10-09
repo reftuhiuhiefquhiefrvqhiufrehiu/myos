@@ -37,6 +37,7 @@ jobs:
               raise SystemExit("A prerelease must use a prerelease Semantic Version")
           if os.environ["RELEASE_PRERELEASE"] == "false" and "-" in version:
               raise SystemExit("A stable release cannot use a prerelease version")
+          PY
           PYTHONPATH=desktop:. QT_QPA_PLATFORM=offscreen \
             python -m unittest discover -s tests -v
       - name: Select release channel
