@@ -61,6 +61,8 @@ class FileListWidget(QListWidget):
             command = "paste"
         elif control and key == Qt.Key.Key_A:
             command = "select-all"
+        elif control and key == Qt.Key.Key_H:
+            command = "toggle-hidden"
         elif control and shift and key == Qt.Key.Key_N:
             command = "new-folder"
         elif key == Qt.Key.Key_Delete:
@@ -140,6 +142,7 @@ class FileManagerWindow(QMainWindow):
         self.trash_store = trash_store or TrashStore()
         self.desktop_path = desktop_path or (Path.home() / "Desktop")
         self._search_root: Path | None = None
+        self._show_hidden = False
         self.current_path = (start_path or Path.home()).expanduser().absolute()
 
         content = QWidget()
@@ -190,6 +193,11 @@ class FileManagerWindow(QMainWindow):
             button = QPushButton(text)
             button.clicked.connect(callback)
             actions.addWidget(button)
+        self.hidden_button = QPushButton("Versteckte Dateien")
+        self.hidden_button.setCheckable(True)
+        self.hidden_button.setChecked(self._show_hidden)
+        self.hidden_button.toggled.connect(self.set_show_hidden)
+        actions.addWidget(self.hidden_button)
         self.trash_button = QPushButton("Papierkorb")
         self.trash_button.clicked.connect(self._show_trash)
         self.trash_button.setEnabled(open_trash is not None)
@@ -212,10 +220,14 @@ class FileManagerWindow(QMainWindow):
         self.path_label.setText(str(self.current_path))
         self.setWindowTitle(f"Dateien — {self.current_path.name or '/'}")
         try:
-            entries = sorted(
-                self.current_path.iterdir(),
-                key=lambda entry: (not entry.is_dir(), entry.name.casefold()),
-            )
+            entries = [
+                entry
+                for entry in sorted(
+                    self.current_path.iterdir(),
+                    key=lambda entry: (not entry.is_dir(), entry.name.casefold()),
+                )
+                if self._show_hidden or not entry.name.startswith(".")
+            ]
         except OSError as error:
             self._show_error("Ordner kann nicht gelesen werden", error)
             return
@@ -281,6 +293,11 @@ class FileManagerWindow(QMainWindow):
             for current, directories, files in os.walk(
                 root, onerror=errors.append, followlinks=False
             ):
+                if not self._show_hidden:
+                    directories[:] = [
+                        name for name in directories if not name.startswith(".")
+                    ]
+                    files = [name for name in files if not name.startswith(".")]
                 directories.sort(key=str.casefold)
                 files.sort(key=str.casefold)
                 parent = Path(current)
@@ -313,6 +330,15 @@ class FileManagerWindow(QMainWindow):
         self._search_root = None
         self.search_field.clear()
         self.refresh()
+
+    def set_show_hidden(self, show: bool) -> None:
+        self._show_hidden = bool(show)
+        if self.hidden_button.isChecked() != self._show_hidden:
+            self.hidden_button.setChecked(self._show_hidden)
+        self.refresh()
+
+    def toggle_hidden_files(self) -> None:
+        self.hidden_button.toggle()
 
     def show_properties(self, path: Path) -> None:
         try:
@@ -364,6 +390,10 @@ class FileManagerWindow(QMainWindow):
             menu.addAction("Einfügen", self.paste_clipboard).setEnabled(
                 self._clipboard_has_urls()
             )
+            hidden_action = menu.addAction("Versteckte Dateien anzeigen")
+            hidden_action.setCheckable(True)
+            hidden_action.setChecked(self._show_hidden)
+            hidden_action.toggled.connect(self.set_show_hidden)
             menu.addAction("Aktualisieren", self.refresh)
             return menu
         if not item.isSelected():
@@ -633,6 +663,7 @@ class FileManagerWindow(QMainWindow):
             "cut": self.cut_to_clipboard,
             "paste": self.paste_clipboard,
             "select-all": self.items.selectAll,
+            "toggle-hidden": self.toggle_hidden_files,
             "new-folder": self.create_folder,
             "delete": self.delete_selected,
             "rename": self.rename_selected,
@@ -654,6 +685,8 @@ class FileManagerWindow(QMainWindow):
             self.paste_clipboard()
         elif control and key == Qt.Key.Key_A:
             self.items.selectAll()
+        elif control and key == Qt.Key.Key_H:
+            self.toggle_hidden_files()
         elif control and shift and key == Qt.Key.Key_N:
             self.create_folder()
         elif key == Qt.Key.Key_Delete:

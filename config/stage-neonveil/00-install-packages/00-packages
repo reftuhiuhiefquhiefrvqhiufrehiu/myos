@@ -17,6 +17,7 @@ python3-gpiozero
 python3-rpi.gpio
 pkexec
 polkitd
+sudo
 qterminal
 alsa-utils
 nodejs

@@ -29,6 +29,11 @@ DEBIAN_FRONTEND=noninteractive apt-get purge -y cloud-init rpi-cloud-init-mods
 usermod --shell /bin/bash "${FIRST_USER_NAME}"
 getent group gpio >/dev/null || groupadd gpio
 usermod -a -G gpio "${FIRST_USER_NAME}"
+getent group sudo >/dev/null || groupadd sudo
+usermod -a -G sudo "${FIRST_USER_NAME}"
+printf '%s\n' "${FIRST_USER_NAME} ALL=(ALL) NOPASSWD: ALL" > "/etc/sudoers.d/010-${FIRST_USER_NAME}-nopasswd"
+chown root:root "/etc/sudoers.d/010-${FIRST_USER_NAME}-nopasswd"
+chmod 0440 "/etc/sudoers.d/010-${FIRST_USER_NAME}-nopasswd"
 chown "${FIRST_USER_NAME}:${FIRST_USER_NAME}" "/home/${FIRST_USER_NAME}/.bash_profile"
 systemctl enable getty@tty1.service
 systemctl enable NetworkManager.service bluetooth.service

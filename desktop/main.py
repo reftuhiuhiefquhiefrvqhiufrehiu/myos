@@ -144,6 +144,7 @@ def main() -> int:
         apply_child_theme(window, desktop.theme)
         taskbar.add_window(window)
         window.show()
+        taskbar.raise_()
 
     def apply_child_theme(window: QWidget, theme: str) -> None:
         if theme == "dark":

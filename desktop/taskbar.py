@@ -321,6 +321,7 @@ class Taskbar(QWidget):
             button.setToolTip(new_title)
 
         window.windowTitleChanged.connect(sync_title)
+        self.raise_()
 
     def eventFilter(self, watched: QWidget, event: QEvent) -> bool:
         if event.type() in (
@@ -330,6 +331,8 @@ class Taskbar(QWidget):
             button = self._task_windows.get(watched)
             if button is not None:
                 button.setChecked(watched.isVisible() and not watched.isMinimized())
+            if event.type() == QEvent.Type.WindowActivate:
+                self.raise_()
         return super().eventFilter(watched, event)
 
     def _remove_task_button(self, button: QToolButton) -> None:

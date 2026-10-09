@@ -56,16 +56,19 @@ maximize, move, and close behavior. The desktop shell draws its own background
 and starts with an informational welcome window. No full desktop environment
 is installed.
 
-The local account has no preset password and SSH remains disabled. Automatic
-console login means anyone with physical access can use that local session;
-do not treat it as a secured multi-user device. The image bypasses Raspberry
-Pi's first-boot user rename wizard so it can land directly on the desktop.
-NeonVeil now offers a local profile chooser when its desktop starts. These desktop
+The local account has no preset password and SSH remains disabled. The first
+user (`neonveil`) is added to the `sudo` group and gets passwordless sudo, so
+the desktop session can perform administrative tasks. Automatic console login
+means anyone with physical access can use that local session and its sudo
+rights; do not treat it as a secured multi-user device. The image bypasses
+Raspberry Pi's first-boot user rename wizard so it can land directly on the
+desktop. NeonVeil now offers a local profile chooser when its desktop starts. These desktop
 profiles only personalize the NeonVeil session: they do not isolate Linux files,
 provide separate Linux accounts, or replace operating-system authentication.
 The image still automatically logs the configured Linux account into tty1.
 The desktop background now has double-click shortcuts, a Start menu, a
-bottom taskbar with open-window buttons, and a live clock. The Start menu
+bottom taskbar with open-window buttons, and a live clock. The taskbar stays
+above other windows so it is always visible. The Start menu
 contains the built-in applications, Settings, shutdown, and restart. Shutdown
 and restart ask for confirmation before invoking `systemctl`.
 
@@ -288,7 +291,10 @@ folder. Activate a result to open the file or enter the containing folder;
 right-click an item and choose **Eigenschaften** for its size, detected type,
 location, creation date when supplied by the filesystem, and modification
 date. Linux filesystems that do not expose a birth time show that field as
-unavailable instead of treating metadata-change time as creation time.
+unavailable instead of treating metadata-change time as creation time. Files
+and folders whose name starts with a dot are hidden by default; toggle them
+with the **Versteckte Dateien** button, the empty-area context menu, or
+`Ctrl+H`. Hidden entries are also skipped during search until they are shown.
 
 Deleting from the file manager moves the item into the local NeonVeil trash under
 `~/.local/share/MyOS/Trash`. Open **Papierkorb** from the Start menu or file

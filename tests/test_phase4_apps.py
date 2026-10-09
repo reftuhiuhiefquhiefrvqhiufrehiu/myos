@@ -43,6 +43,27 @@ class PhaseFourApplicationTests(unittest.TestCase):
             self.assertEqual(opened, [str(root / "a.txt")])
             manager.close()
 
+    def test_file_manager_hides_dotfiles_until_toggled(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "visible.txt").write_text("hello", encoding="utf-8")
+            (root / ".hidden.txt").write_text("secret", encoding="utf-8")
+            manager = FileManagerWindow(lambda _path: None, root)
+            manager.refresh()
+
+            def listed() -> list[str]:
+                return [
+                    manager.items.item(index).text()
+                    for index in range(manager.items.count())
+                ]
+
+            self.assertEqual(listed(), ["visible.txt"])
+            manager.toggle_hidden_files()
+            self.assertEqual(listed(), [".hidden.txt", "visible.txt"])
+            manager.toggle_hidden_files()
+            self.assertEqual(listed(), ["visible.txt"])
+            manager.close()
+
     def test_file_manager_copies_moves_and_deletes_files(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
