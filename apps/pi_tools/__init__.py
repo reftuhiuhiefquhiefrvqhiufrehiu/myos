@@ -1,1 +1,1 @@
-"""Local Raspberry Pi hardware and network tools for MyOS."""
+"""Local Raspberry Pi hardware and network tools for NeonVeil."""

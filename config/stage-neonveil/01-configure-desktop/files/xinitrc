@@ -1,5 +1,11 @@
 #!/bin/sh
 
+# QtWebEngine (the browser) must not use the Chromium sandbox or GPU on
+# Raspberry Pi OS, otherwise creating a web view can abort the session.
+export QTWEBENGINE_DISABLE_SANDBOX=1
+export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
+
 openbox-session &
 PYTHONPATH=/usr/share/neonveil/current:/usr/share/neonveil/current/desktop \
 	exec /usr/bin/python3 /usr/share/neonveil/current/desktop/main.py
+

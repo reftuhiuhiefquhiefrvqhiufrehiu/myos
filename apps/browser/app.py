@@ -30,14 +30,14 @@ HOME_HTML = """
 <html lang="de">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>neonveil – Startseite</title>
+<title>NeonVeil – Startseite</title>
 <style>
   body { margin: 12vh auto; max-width: 42rem; padding: 0 1.5rem;
          color: #20333b; background: #f0f4f5;
          font: 18px system-ui, sans-serif; }
   h1 { color: #14596a; } p { line-height: 1.6; }
 </style>
-<h1>neonveil Browser</h1>
+<h1>NeonVeil Browser</h1>
 <p>Dies ist deine lokale Startseite. Für Webseiten benötigst du eine
 Internetverbindung. Der Browser selbst startet ohne Netzwerkverbindung.</p>
 </html>
@@ -488,9 +488,6 @@ class BrowserWindow(QMainWindow):
             QWebEngineDownloadRequest.DownloadState.DownloadCancelled.value,
             QWebEngineDownloadRequest.DownloadState.DownloadInterrupted.value,
         }
-        if record.terminal_emitted and state_value in terminal_states:
-            self._refresh_download_list()
-            return
         if state_value == QWebEngineDownloadRequest.DownloadState.DownloadRequested.value:
             record.state = "requested"
             record.status = "Wartet"

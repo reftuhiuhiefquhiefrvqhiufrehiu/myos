@@ -1,1 +1,1 @@
-"""The neonveil plain-text editor."""
+"""The NeonVeil plain-text editor."""

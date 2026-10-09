@@ -1,6 +1,6 @@
-# neonveil
+# NeonVeil
 
-neonveil is a lightweight desktop system for Raspberry Pi 4. The project is
+NeonVeil is a lightweight desktop system for Raspberry Pi 4. The project is
 being built in phases on a bootable Raspberry Pi OS Lite image.
 
 ## Phase 1: Linux base and image
@@ -51,7 +51,7 @@ custom stage and export configuration are removed when the build exits.
 The custom pi-gen stage installs a minimal Xorg/Openbox session and the Qt 6
 PySide6 Widgets runtime from Debian packages. At boot, systemd automatically
 logs the local `neonveil` account into tty1; its login profile starts X and the
-neonveil desktop. Openbox supplies native window decorations and minimize,
+NeonVeil desktop. Openbox supplies native window decorations and minimize,
 maximize, move, and close behavior. The desktop shell draws its own background
 and starts with an informational welcome window. No full desktop environment
 is installed.
@@ -60,8 +60,8 @@ The local account has no preset password and SSH remains disabled. Automatic
 console login means anyone with physical access can use that local session;
 do not treat it as a secured multi-user device. The image bypasses Raspberry
 Pi's first-boot user rename wizard so it can land directly on the desktop.
-MyOS now offers a local profile chooser when its desktop starts. These desktop
-profiles only personalize the MyOS session: they do not isolate Linux files,
+NeonVeil now offers a local profile chooser when its desktop starts. These desktop
+profiles only personalize the NeonVeil session: they do not isolate Linux files,
 provide separate Linux accounts, or replace operating-system authentication.
 The image still automatically logs the configured Linux account into tty1.
 The desktop background now has double-click shortcuts, a Start menu, a
@@ -97,7 +97,7 @@ window; clicking it again restores the window.
 The Start menu has a Programs submenu and direct Files and Settings entries.
 Files, the text editor, and Pictures now launch working applications.
 Shutdown and restart show a confirmation dialog, then request the corresponding
-action from systemd. The wallpaper, icons, taskbar, and windows use neonveil
+action from systemd. The wallpaper, icons, taskbar, and windows use NeonVeil
 styling and standard system icons; no proprietary desktop assets are included.
 
 ## Phase 4: Files, text, and pictures
@@ -127,11 +127,11 @@ PYTHONPATH=desktop:. \
 
 ## Phase 5: Time, terminal, browser, downloads, and Code Studio
 
-The browser keeps its local offline start page and only accepts `http://` and `https://` addresses. A save dialog starts in `~/Downloads`; the Downloads button shows each download's state and byte progress and offers actions to open the file or its folder. The last 100 records and their final states are saved in the user's neonveil settings and restored when Browser is reopened. Unsafe server filenames are rejected, and existing files are given a collision-safe name rather than overwritten. Completed PNG/JPG downloads are handed directly to neonveil's own picture viewer, and downloaded images also open from the file manager. Failed, interrupted, and user-cancelled transfers have distinct visible states.
+The browser keeps its local offline start page and only accepts `http://` and `https://` addresses. A save dialog starts in `~/Downloads`; the Downloads button shows each download's state and byte progress and offers actions to open the file or its folder. The last 100 records and their final states are saved in the user's NeonVeil settings and restored when Browser is reopened. Unsafe server filenames are rejected, and existing files are given a collision-safe name rather than overwritten. Completed PNG/JPG downloads are handed directly to NeonVeil's own picture viewer, and downloaded images also open from the file manager. Failed, interrupted, and user-cancelled transfers have distinct visible states.
 
 The integrated **Code Studio** is meant for local editing and preview. It supports HTML, CSS, JavaScript, Markdown, JSON, TypeScript/TSX files, and simple project folders, with line numbers and basic syntax coloring. Opening and saving source never starts it. Preview is an explicit action: HTML and JavaScript preview need confirmation because they can execute code; HTML/CSS that reference remote resources need network access. JavaScript output is displayed as text rather than inserted as markup. A JavaScript file can also be run with `node` only after confirmation. The app never shell-evaluates arbitrary user input; it invokes the runtime with an argument array, then displays stdout, stderr, and exit status.
 
-The base image includes Debian Trixie's ARM64 [`nodejs`](https://packages.debian.org/trixie/arm64/nodejs) runtime and [`npm`](https://packages.debian.org/trixie/arm64/npm) package for JavaScript. The official Trixie listings verified `nodejs` 20.19.2 for arm64 and npm 9.2.0 (architecture-independent). This installs the general-purpose runtime and package manager, not any project's dependencies. For TypeScript/TSX or Next.js projects, those stacks normally need a project-local `npm install`, which requires network access and an actual project checkout. Code Studio can select a project folder, confirm and run its existing `npm run dev` script, stop the server, and open a detected local URL in neonveil Browser. If the selected project has no `node_modules` directory, Code Studio explicitly reminds you that `npm install` needs network access. The OS image does not bundle `node_modules`, Next.js, or a global TypeScript compiler.
+The base image includes Debian Trixie's ARM64 [`nodejs`](https://packages.debian.org/trixie/arm64/nodejs) runtime and [`npm`](https://packages.debian.org/trixie/arm64/npm) package for JavaScript. The official Trixie listings verified `nodejs` 20.19.2 for arm64 and npm 9.2.0 (architecture-independent). This installs the general-purpose runtime and package manager, not any project's dependencies. For TypeScript/TSX or Next.js projects, those stacks normally need a project-local `npm install`, which requires network access and an actual project checkout. Code Studio can select a project folder, confirm and run its existing `npm run dev` script, stop the server, and open a detected local URL in NeonVeil Browser. If the selected project has no `node_modules` directory, Code Studio explicitly reminds you that `npm install` needs network access. The OS image does not bundle `node_modules`, Next.js, or a global TypeScript compiler.
 
 The **Uhr** application shows the current time, a configurable countdown timer,
 and a stopwatch with pause/resume and reset controls. It uses monotonic elapsed
@@ -174,10 +174,10 @@ The volume panel reads and changes an ALSA mixer control through `amixer`
 the panel disables the control and explains why. Display modes come from the
 active X11 display through `xrandr`; only modes the display reports are offered,
 and failed mode changes are reported without claiming success. The About panel
-identifies neonveil Phase 6 and its Raspberry Pi OS Lite / Debian Trixie base.
+identifies NeonVeil Phase 6 and its Raspberry Pi OS Lite / Debian Trixie base.
 
 Shutdown and restart continue to require confirmation. If the `systemctl`
-request cannot be run or returns an error, neonveil displays the command's
+request cannot be run or returns an error, NeonVeil displays the command's
 failure detail.
 
 Settings use PySide6 and the standard Python library. The Phase 6 regression
@@ -198,7 +198,7 @@ SD-card image.
 
 Version 1.1.0 adds a unified local-file workflow. Double-clicking a file or
 opening it with Enter routes common image, audio, web/code, and text formats
-to their matching MyOS apps. MyOS `.desktop` links are read as local file or
+to their matching NeonVeil apps. NeonVeil `.desktop` links are read as local file or
 application links; arbitrary shell `Exec` commands are never run.
 
 The desktop shows items from `~/Desktop` alongside the built-in program icons.
@@ -218,7 +218,7 @@ confirmed **Papierkorb leeren** action.
 
 ## Phase 7: Profiles, appearance, notifications, and Start
 
-At desktop startup, choose a local MyOS profile or create one with a username
+At desktop startup, choose a local NeonVeil profile or create one with a username
 and optional local PNG/JPEG avatar. **Abmelden** in the Start menu returns to
 the chooser. Profiles are conveniences, not security boundaries: every profile
 still uses the same automatically logged-in Linux account, home directory,
@@ -232,14 +232,14 @@ windows, menus, taskbar, and notification popups.
 The Start menu includes searchable programs, an alphabetical app list, recent
 programs, and per-app pin controls. **Benachrichtigungen** opens the locally
 saved history (up to 100 entries); popups dismiss automatically and browser
-image downloads report completion. **Über MyOS** shows the app version,
+image downloads report completion. **Über NeonVeil** shows the app version,
 detected Raspberry Pi model and processor, CPU use, RAM use, and root-storage
 use. Hardware values that cannot be read on the current system are shown as
 unavailable rather than guessed. The nested **Ein/Aus** menu keeps the
 confirmation step for shutdown and restart.
 
 The profile, appearance, and notification records are stored in the user's
-standard neonveil Qt settings file. To run their regression tests with the
+standard NeonVeil Qt settings file. To run their regression tests with the
 desktop shell and settings tests:
 
 ```sh
@@ -257,25 +257,25 @@ PYTHONPATH=desktop:. \
 4. Choose **Choose OS** → **Use custom** and select `build/MyOS-RPi4.img`.
 5. Choose the SD card under **Choose Storage**, then select **Write**.
 6. When writing finishes, eject the card safely, insert it into the Pi 4, and
-   power on the Pi. It should automatically start the neonveil desktop.
+   power on the Pi. It should automatically start the NeonVeil desktop.
 
 ### Updating
 
-MyOS includes a GitHub Release-based **MyOS Update Manager**. It checks the
+NeonVeil includes a GitHub Release-based **NeonVeil Update Manager**. It checks the
 configured repository for ARM64 Raspberry Pi 4 releases, validates the archive
 size and SHA-256 digest, stages the new desktop version beside the active one,
-and switches the active version atomically. MyOS preferences and profiles are
+and switches the active version atomically. NeonVeil preferences and profiles are
 backed up before installation; personal files are not included in or removed by
 an update. A restart activates the new version. The previous version remains
 available for rollback.
 
 Open **Einstellungen → System · Updates** to choose the Stable, Beta, or
 Developer channel and configure optional checks/downloads/installation, or open
-**MyOS Update Manager** from the Start menu. Automatic installation is disabled
+**NeonVeil Update Manager** from the Start menu. Automatic installation is disabled
 by default and requires explicit opt-in; it never restarts the Pi automatically.
 The same update logic is available from the terminal with `myos-update`.
 
-Updates from GitHub currently replace the MyOS desktop/application bundle.
+Updates from GitHub currently replace the NeonVeil desktop/application bundle.
 Raspberry Pi OS, the Linux kernel, firmware, and Debian packages are not changed
 by these bundles; use a newly built image for base-system changes or recovery.
 See [`UPDATE_SYSTEM.md`](./UPDATE_SYSTEM.md) for repository setup, release
@@ -290,7 +290,7 @@ location, creation date when supplied by the filesystem, and modification
 date. Linux filesystems that do not expose a birth time show that field as
 unavailable instead of treating metadata-change time as creation time.
 
-Deleting from the file manager moves the item into the local MyOS trash under
+Deleting from the file manager moves the item into the local NeonVeil trash under
 `~/.local/share/MyOS/Trash`. Open **Papierkorb** from the Start menu or file
 manager to see its contents and total size or restore an item. A conflicting
 restore name is preserved and the restored copy receives a numbered suffix.
@@ -299,7 +299,7 @@ restore name is preserved and the restored copy receives a numbered suffix.
 The **Musik** app plays MP3 and OGG files in a simple playlist with playback,
 seek, and volume controls. **Screenshot** captures the full screen and stores
 sequential PNG files in `~/Pictures/Screenshots`; the **Druck** key also takes
-a screenshot while MyOS is running. The image build includes Qt Multimedia
+a screenshot while NeonVeil is running. The image build includes Qt Multimedia
 and GStreamer good plugins for common MP3/OGG decoding.
 
 The file/media regression tests run alongside the existing phase 4 tests:
@@ -357,7 +357,7 @@ Desktops deutlich:
 - **Fortschrittsfenster**: Große Kopier- und Verschiebevorgänge zeigen einen
   Fortschrittsdialog mit Abbrechen-Schaltfläche. Kleine Vorgänge laufen ohne
   Dialog, um den Ablauf nicht zu unterbrechen.
-- **Konfliktdialoge**: Existiert am Ziel bereits ein Element, fragt neonveil nach
+- **Konfliktdialoge**: Existiert am Ziel bereits ein Element, fragt NeonVeil nach
   **Ersetzen**, **Überspringen** oder **Umbenennen**. Über „Für alle folgenden
   Elemente anwenden“ gilt die Entscheidung für den restlichen Vorgang.
 
@@ -388,7 +388,7 @@ apps/screenshots/     Full-screen capture and Print-key shortcut
 apps/pi_tools/        Local Raspberry Pi network, Bluetooth, GPIO and info tools
 desktop/profiles.py   Local desktop profile chooser and store
 desktop/notifications.py  Popup notifications and history
-desktop/system_info.py    MyOS version and live hardware readings
+desktop/system_info.py    NeonVeil version and live hardware readings
 apps/code_studio/     Local source editor, preview, and project runner
 desktop/              PySide6 desktop application
 settings/             Reserved for system-level configuration

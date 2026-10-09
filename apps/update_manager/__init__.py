@@ -1,1 +1,1 @@
-"""MyOS Update Manager application."""
+"""NeonVeil Update Manager application."""

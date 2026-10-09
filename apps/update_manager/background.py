@@ -52,7 +52,7 @@ class BackgroundUpdateWatcher(QObject):
         release, downloaded = result
         if release is None:
             return
-        detail = f"MyOS {release.version} ist verfügbar."
+        detail = f"NeonVeil {release.version} ist verfügbar."
         if downloaded:
             detail += " Das Update wurde heruntergeladen und geprüft."
         auto_install = self.manager.preferences["auto_install"] and downloaded
@@ -82,7 +82,7 @@ class BackgroundUpdateWatcher(QObject):
     @Slot(str)
     def _check_failed(self, message: str) -> None:
         self.manager.record_status("error", message)
-        self.notifications.notify("Updates nicht geprüft", message, "MyOS Update")
+        self.notifications.notify("Updates nicht geprüft", message, "NeonVeil Update")
 
     def _install_after_notice(self) -> None:
         if self._auto_install_cancelled:
@@ -117,7 +117,7 @@ class BackgroundUpdateWatcher(QObject):
     @Slot(object)
     def _install_completed(self, _result: object) -> None:
         self.notifications.notify(
-            "MyOS-Update installiert",
-            "Das Update ist bereit. Starte MyOS neu, um die neue Version zu verwenden.",
-            "MyOS Update",
+            "NeonVeil-Update installiert",
+            "Das Update ist bereit. Starte NeonVeil neu, um die neue Version zu verwenden.",
+            "NeonVeil Update",
         )

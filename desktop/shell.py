@@ -124,7 +124,7 @@ class DesktopShell(QWidget):
         ("downloads", "Downloads"),
     )
     APPLICATION_TITLES = {
-        "welcome": "Willkommen bei neonveil",
+        "welcome": "Willkommen bei NeonVeil",
         "files": "Dateien",
         "editor": "Texteditor",
         "pictures": "Bilder",
@@ -134,13 +134,13 @@ class DesktopShell(QWidget):
         "browser": "Browser",
         "downloads": "Downloads",
         "settings": "Einstellungen",
-        "about": "Über MyOS",
+        "about": "Über NeonVeil",
         "notifications": "Benachrichtigungen",
         "music": "Musik",
         "screenshot": "Screenshot",
         "trash": "Papierkorb",
         "pi-tools": "Raspberry-Pi-Werkzeuge",
-        "update-manager": "MyOS Update Manager",
+        "update-manager": "NeonVeil Update Manager",
     }
 
     def __init__(
@@ -155,7 +155,7 @@ class DesktopShell(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowStaysOnBottomHint,
         )
-        self.setWindowTitle("neonveil")
+        self.setWindowTitle("NeonVeil")
         preferences = settings or QSettings("neonveil", "neonveil")
         self.preferences = preferences
         self.desktop_path = (desktop_path or Path.home() / "Desktop").expanduser().absolute()
@@ -304,7 +304,7 @@ class DesktopShell(QWidget):
         painter.drawText(
             36,
             self.height() - 38,
-            "neonveil",
+            "NeonVeil",
         )
         painter.setPen(QColor(230, 246, 245, 185))
         painter.drawText(
@@ -532,7 +532,7 @@ class DesktopShell(QWidget):
         heading.setObjectName("heading")
         description = QLabel(descriptions.get(app_id, "Die Anwendung folgt später."))
         description.setWordWrap(True)
-        status = QLabel("neonveil · Phase 6")
+        status = QLabel("NeonVeil · Phase 6")
 
         layout.addWidget(heading)
         layout.addWidget(description)

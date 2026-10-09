@@ -180,7 +180,7 @@ class UpdateManagerCoreTests(unittest.TestCase):
         self.check_routes([], routes)
         manager = self.manager(opener=self.make_opener(routes))
         self.assertIsNone(manager.check_for_updates())
-        self.assertEqual(manager.status()["message"], "MyOS ist auf dem neuesten Stand.")
+        self.assertEqual(manager.status()["message"], "NeonVeil ist auf dem neuesten Stand.")
 
     def test_download_verifies_sha256_and_reports_interruption(self) -> None:
         entry, routes = self.make_release_entry("1.1.0", body=b"verified bundle")
@@ -406,7 +406,7 @@ class UpdateManagerWindowTests(unittest.TestCase):
                 is_raspberry_pi4=lambda: True,
             )
             window = UpdateManagerWindow(manager)
-            self.assertEqual(window.windowTitle(), "MyOS Update Manager")
+            self.assertEqual(window.windowTitle(), "NeonVeil Update Manager")
             self.assertEqual(window.installed_version.text(), APP_VERSION)
             self.assertEqual(window.channel_combo.currentData(), "stable")
             self.assertFalse(window.auto_install.isChecked())

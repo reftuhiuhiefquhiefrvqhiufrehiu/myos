@@ -39,7 +39,7 @@ class NotificationStore:
             if isinstance(item, dict)
         ]
 
-    def add(self, title: str, message: str, app: str = "MyOS") -> dict[str, str]:
+    def add(self, title: str, message: str, app: str = "NeonVeil") -> dict[str, str]:
         item = {
             "title": title[:120],
             "message": message[:500],
@@ -78,7 +78,7 @@ class NotificationPopup(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 9, 12, 9)
         header = QHBoxLayout()
-        self.app_label = QLabel("MyOS")
+        self.app_label = QLabel("NeonVeil")
         self.app_label.setObjectName("appName")
         self.close_button = QPushButton("×")
         self.close_button.setFixedSize(25, 24)
@@ -201,7 +201,7 @@ class NotificationHistoryWindow(QMainWindow):
         for entry in reversed(self.store.history()):
             self.items.addItem(
                 QListWidgetItem(
-                    f"{entry.get('time', '')}  ·  {entry.get('app', 'MyOS')}\n"
+                    f"{entry.get('time', '')}  ·  {entry.get('app', 'NeonVeil')}\n"
                     f"{entry.get('title', '')}\n{entry.get('message', '')}"
                 )
             )
@@ -226,7 +226,7 @@ class NotificationCenter:
         self,
         title: str,
         message: str,
-        app: str = "MyOS",
+        app: str = "NeonVeil",
         *,
         actions: tuple[tuple[str, Callable[[], None]], ...] = (),
     ) -> None:
@@ -243,9 +243,9 @@ class NotificationCenter:
         message: str | None = None,
     ) -> None:
         item = self.store.add(
-            "Ein neues MyOS-Update ist verfügbar",
-            message or f"MyOS {version} kann heruntergeladen und installiert werden.",
-            "MyOS Update",
+            "Ein neues NeonVeil-Update ist verfügbar",
+            message or f"NeonVeil {version} kann heruntergeladen und installiert werden.",
+            "NeonVeil Update",
         )
         self.popup.show_notification(
             item,

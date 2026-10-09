@@ -1,1 +1,1 @@
-"""The neonveil Qt WebEngine browser."""
+"""The NeonVeil Qt WebEngine browser."""

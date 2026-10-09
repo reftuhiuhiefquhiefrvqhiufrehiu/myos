@@ -29,7 +29,7 @@ class DesktopShellTests(unittest.TestCase):
         flags = desktop.windowFlags()
         self.assertTrue(flags & Qt.WindowType.FramelessWindowHint)
         self.assertTrue(flags & Qt.WindowType.WindowStaysOnBottomHint)
-        self.assertEqual(desktop.windowTitle(), "neonveil")
+        self.assertEqual(desktop.windowTitle(), "NeonVeil")
         desktop.close()
 
     def test_desktop_shortcuts_open_on_double_click(self) -> None:
@@ -65,14 +65,14 @@ class DesktopShellTests(unittest.TestCase):
                 "Downloads",
                 "Einstellungen",
                 "Musik",
-                "MyOS Update Manager",
+                "NeonVeil Update Manager",
                 "Papierkorb",
                 "Raspberry-Pi-Werkzeuge",
                 "Screenshot",
                 "Terminal",
                 "Texteditor",
                 "Uhr",
-                "Über MyOS",
+                "Über NeonVeil",
             ],
         )
         self.assertEqual(
@@ -87,7 +87,7 @@ class DesktopShellTests(unittest.TestCase):
                 "Downloads",
                 "Einstellungen",
                 "Benachrichtigungen",
-                "Über MyOS",
+                "Über NeonVeil",
                 "",
                 "Ein/Aus",
             ],

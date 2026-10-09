@@ -39,7 +39,7 @@ def _installed_version() -> str:
             continue
         if version:
             return version
-    raise UpdateError("Die installierte MyOS-Version konnte nicht gelesen werden.")
+    raise UpdateError("Die installierte NeonVeil-Version konnte nicht gelesen werden.")
 
 
 def _elevate(command: str) -> int:
@@ -59,7 +59,7 @@ def _elevate(command: str) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="myos-update",
-        description="MyOS-Aktualisierungen sicher verwalten.",
+        description="NeonVeil-Aktualisierungen sicher verwalten.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ("check", "download", "install", "status", "rollback", "history"):
@@ -106,7 +106,7 @@ def main(arguments: list[str] | None = None) -> int:
                 print(f"Update-Kanal: {manager.channel}")
             return 0
         if args.command == "status":
-            print(f"MyOS-Version: {manager.current_version}")
+            print(f"NeonVeil-Version: {manager.current_version}")
             print(f"Update-Kanal: {manager.channel}")
             print(manager.status().get("message", "Noch kein Updatevorgang."))
             return 0
@@ -123,14 +123,14 @@ def main(arguments: list[str] | None = None) -> int:
         if args.command == "rollback":
             if os.geteuid() != 0:
                 return _elevate("rollback")
-            print(f"MyOS-Version {manager.rollback()} wurde wiederhergestellt.")
+            print(f"NeonVeil-Version {manager.rollback()} wurde wiederhergestellt.")
             return 0
         release = manager.check_for_updates()
         if release is None:
-            print("MyOS ist auf dem neuesten Stand.")
+            print("NeonVeil ist auf dem neuesten Stand.")
             return 0
         if args.command == "check":
-            print(f"Update verfügbar: MyOS {release.version} ({release.channel})")
+            print(f"Update verfügbar: NeonVeil {release.version} ({release.channel})")
             print(f"Veröffentlicht: {release.release_date}")
             print(f"Größe: {release.size} Byte")
             return 0
@@ -143,7 +143,7 @@ def main(arguments: list[str] | None = None) -> int:
             if not manager.downloaded_file(release).is_file():
                 raise UpdateError("Bitte lade das Update zuerst herunter.")
             manager.install(release)
-            print(f"MyOS {release.version} ist installiert. Bitte starte das System neu.")
+            print(f"NeonVeil {release.version} ist installiert. Bitte starte das System neu.")
             return 0
     except UpdateError as error:
         logging.getLogger("myos.update").error(

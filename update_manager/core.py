@@ -324,7 +324,7 @@ class UpdateManager:
             url,
             headers={
                 "Accept": "application/vnd.github+json",
-                "User-Agent": "MyOS-Update-Manager",
+                "User-Agent": "NeonVeil-Update-Manager",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
         )
@@ -534,7 +534,7 @@ class UpdateManager:
             reverse=True,
         )
         if not candidates:
-            self._save_status("check", "MyOS ist auf dem neuesten Stand.")
+            self._save_status("check", "NeonVeil ist auf dem neuesten Stand.")
             return None
         release = self._release_from_api(candidates[0], owner, repo)
         self._save_status("check", f"Version {release.version} ist verfügbar.")
@@ -571,7 +571,7 @@ class UpdateManager:
         try:
             request = urllib.request.Request(
                 release.download_url,
-                headers={"Accept": "application/octet-stream", "User-Agent": "MyOS-Update-Manager"},
+                headers={"Accept": "application/octet-stream", "User-Agent": "NeonVeil-Update-Manager"},
             )
             with self._urlopen(request, timeout=60) as response, partial.open("wb") as output:
                 final_url = urllib.parse.urlsplit(response.geturl())
@@ -752,7 +752,7 @@ class UpdateManager:
                     backup.add(path, arcname=path.relative_to(self.home))
         except (OSError, tarfile.TarError) as error:
             backup_path.unlink(missing_ok=True)
-            raise UpdateError("Die MyOS-Einstellungen konnten nicht gesichert werden.", str(error)) from error
+            raise UpdateError("Die NeonVeil-Einstellungen konnten nicht gesichert werden.", str(error)) from error
         os.chmod(backup_path, 0o600)
         return backup_path
 
@@ -761,15 +761,15 @@ class UpdateManager:
         if not current_link.is_symlink():
             raise UpdateError(
                 "Dieses System verwendet noch kein Update-fähiges Installationslayout. "
-                "Installiere zuerst ein aktuelles MyOS-Image."
+                "Installiere zuerst ein aktuelles NeonVeil-Image."
             )
         target = current_link.resolve(strict=False)
         try:
             target.relative_to(releases_dir.resolve())
         except ValueError as error:
-            raise UpdateError("Die aktive MyOS-Version liegt außerhalb des Update-Verzeichnisses.") from error
+            raise UpdateError("Die aktive NeonVeil-Version liegt außerhalb des Update-Verzeichnisses.") from error
         if not target.is_dir():
-            raise UpdateError("Die aktuell installierte MyOS-Version ist nicht verfügbar.")
+            raise UpdateError("Die aktuell installierte NeonVeil-Version ist nicht verfügbar.")
 
     @staticmethod
     def _current_target(current_link: Path) -> Path | None:
@@ -794,7 +794,7 @@ class UpdateManager:
         self._validate_current_link(current_link, releases_dir)
         current = self._current_target(current_link)
         if current is None:
-            raise UpdateError("Die aktuell installierte MyOS-Version ist nicht verfügbar.")
+            raise UpdateError("Die aktuell installierte NeonVeil-Version ist nicht verfügbar.")
         current_version = current.name
         candidates = []
         for candidate in releases_dir.iterdir():
@@ -806,7 +806,7 @@ class UpdateManager:
             except ValueError:
                 continue
         if not candidates:
-            raise UpdateError("Es wurde keine vorherige MyOS-Version für den Rollback gefunden.")
+            raise UpdateError("Es wurde keine vorherige NeonVeil-Version für den Rollback gefunden.")
         previous = max(candidates, key=lambda item: _VersionSortKey(item.name))
         self._atomic_activate(previous, current_link)
         self._append_history(
@@ -818,7 +818,7 @@ class UpdateManager:
                 "backup": "",
             }
         )
-        self._save_status("rollback", f"MyOS-Version {previous.name} wurde wiederhergestellt.")
+        self._save_status("rollback", f"NeonVeil-Version {previous.name} wurde wiederhergestellt.")
         return previous.name
 
     def history(self) -> list[dict[str, str]]:

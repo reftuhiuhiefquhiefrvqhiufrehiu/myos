@@ -1,1 +1,1 @@
-"""The neonveil PNG and JPEG image viewer."""
+"""The NeonVeil PNG and JPEG image viewer."""

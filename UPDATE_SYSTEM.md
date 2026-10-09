@@ -1,8 +1,8 @@
-# MyOS update system
+# NeonVeil update system
 
-MyOS downloads versioned desktop/application bundles from GitHub Releases. It
+NeonVeil downloads versioned desktop/application bundles from GitHub Releases. It
 does not execute scripts from a repository checkout. A release bundle contains
-the `VERSION`, `apps/`, `desktop/`, and `update_manager/` files only. MyOS
+the `VERSION`, `apps/`, `desktop/`, and `update_manager/` files only. NeonVeil
 extracts regular files into a new version directory, validates the contents,
 and atomically changes the `current` symlink. The old version stays installed
 until an administrator deliberately removes it.
@@ -38,7 +38,7 @@ or execute arbitrary files from the default branch.
 
 ## Versions and channels
 
-`VERSION` at the repository root is the single installed MyOS version. Use
+`VERSION` at the repository root is the single installed NeonVeil version. Use
 Semantic Versioning:
 
 | Channel | Version example | GitHub release |
@@ -61,7 +61,7 @@ manual action.
 
 ## Preparing and publishing a release
 
-1. Update `VERSION` to the new Semantic Version and update the MyOS source.
+1. Update `VERSION` to the new Semantic Version and update the NeonVeil source.
 2. Run the relevant tests (the release workflow runs the complete test suite).
 3. Create a GitHub Release whose tag matches the new version and whose release
    notes contain the user-facing changelog.
@@ -114,7 +114,7 @@ an independent publisher signature. Trust is anchored in HTTPS and the
 maintainers' access to the configured GitHub repository. Protect GitHub
 accounts, release permissions, branch protections, and Actions permissions.
 
-Before switching versions, MyOS archives only its settings/profile locations:
+Before switching versions, NeonVeil archives only its settings/profile locations:
 
 - `~/.config/neonveil`
 - `~/.config/myos`
@@ -131,10 +131,10 @@ desktop. Non-privileged technical logs are under
 
 ## User interface and terminal
 
-Open **MyOS Update Manager** from the Start menu, or use
+Open **NeonVeil Update Manager** from the Start menu, or use
 **Einstellungen → System · Updates** to select a channel and set optional
 automation. If no eligible release is published, the manager displays
-“MyOS ist auf dem neuesten Stand.” When the network is unavailable, it explains
+“NeonVeil ist auf dem neuesten Stand.” When the network is unavailable, it explains
 that it could not check and leaves the desktop usable.
 
 The CLI invokes the same Python update manager as the UI:
@@ -186,7 +186,7 @@ PYTHONPATH=desktop:. QT_QPA_PLATFORM=offscreen \
 The tests cover Semantic Version comparison, channel selection, no-release and
 offline cases, URL validation, SHA-256 checking, interrupted/corrupt downloads,
 unsafe archive paths, staged activation, configuration backups, history, and
-rollback. The release workflow runs the complete MyOS test suite before
+rollback. The release workflow runs the complete NeonVeil test suite before
 publishing package assets.
 
 Before deploying a production release to devices, also verify it on a Raspberry

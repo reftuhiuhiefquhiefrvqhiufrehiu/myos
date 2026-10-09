@@ -1,4 +1,4 @@
-"""Shared update logic used by the MyOS Update Manager and CLI."""
+"""Shared update logic used by the NeonVeil Update Manager and CLI."""
 
 from .core import (
     CHANNELS,

@@ -1,1 +1,1 @@
-"""Built-in neonveil desktop applications."""
+"""Built-in NeonVeil desktop applications."""

@@ -28,7 +28,7 @@ def _sha256(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Erstellt ein versioniertes MyOS-ARM64-Updatepaket."
+        description="Erstellt ein versioniertes NeonVeil-ARM64-Updatepaket."
     )
     parser.add_argument("--channel", choices=("stable", "beta", "developer"), required=True)
     parser.add_argument("--changelog", required=True)

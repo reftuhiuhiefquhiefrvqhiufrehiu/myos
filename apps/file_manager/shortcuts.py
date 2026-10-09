@@ -18,7 +18,7 @@ def create_desktop_shortcut(
     if (target is None) == (app_id is None):
         raise ValueError("Eine Verknüpfung benötigt genau ein Ziel.")
     if app_id is not None and not re.fullmatch(r"[a-z0-9-]+", app_id):
-        raise ValueError("Ungültige MyOS-Anwendung.")
+        raise ValueError("Ungültige NeonVeil-Anwendung.")
 
     desktop_path = desktop_path.expanduser().absolute()
     desktop_path.mkdir(parents=True, exist_ok=True)
@@ -58,7 +58,7 @@ def read_desktop_shortcut(path: Path) -> tuple[Path | None, str | None]:
         raise ValueError("Die Verknüpfung enthält keinen Desktop-Entry.")
     entry = parser["Desktop Entry"]
     if entry.get("Type") != "Link":
-        raise ValueError("Nur sichere MyOS-Datei- und Anwendungsverknüpfungen werden geöffnet.")
+        raise ValueError("Nur sichere NeonVeil-Datei- und Anwendungsverknüpfungen werden geöffnet.")
     address = entry.get("URL", "")
     if address.startswith("myos-app://"):
         app_id = address.removeprefix("myos-app://")

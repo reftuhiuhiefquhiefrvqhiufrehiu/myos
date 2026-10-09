@@ -256,7 +256,7 @@ class SettingsWindow(QMainWindow):
 
         heading = QLabel("Einstellungen")
         heading.setObjectName("heading")
-        subtitle = QLabel("Passe deinen neonveil-Desktop an.")
+        subtitle = QLabel("Passe deinen NeonVeil-Desktop an.")
         subtitle.setObjectName("subtitle")
         layout.addWidget(heading)
         layout.addWidget(subtitle)
@@ -592,11 +592,11 @@ class SettingsWindow(QMainWindow):
 
     @staticmethod
     def _about_group() -> QGroupBox:
-        group = QGroupBox("Über MyOS")
+        group = QGroupBox("Über NeonVeil")
         layout = QVBoxLayout(group)
         layout.setSpacing(3)
         details = (
-            ("MyOS-Version", APP_VERSION),
+            ("NeonVeil-Version", APP_VERSION),
             ("Basis", "Raspberry Pi OS Lite · Debian Trixie · ARM64"),
             ("Sitzung", f"X11 · {platform.machine()}"),
         )

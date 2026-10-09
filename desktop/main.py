@@ -1,5 +1,20 @@
+from __future__ import annotations
+
+import os
+import platform
 import sys
 from pathlib import Path
+
+# QtWebEngine (used by the browser) needs these settings before it is imported.
+# On Raspberry Pi OS the Chromium sandbox cannot use user namespaces and the
+# GPU stack is not reliable, which can otherwise abort the whole session as soon
+# as a web view is created.
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+if platform.system() == "Linux":
+    os.environ.setdefault(
+        "QTWEBENGINE_CHROMIUM_FLAGS",
+        "--no-sandbox --disable-gpu --disable-dev-shm-usage",
+    )
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QDesktopServices
@@ -10,7 +25,6 @@ from apps.file_manager.app import FileManagerWindow
 from apps.file_manager.shortcuts import read_desktop_shortcut
 from apps.file_manager.trash import TrashWindow
 from apps.image_viewer.app import ImageViewerWindow
-from apps.browser.app import BrowserWindow
 from apps.music_player.app import MusicPlayerWindow
 from apps.pi_tools.app import RaspberryPiToolsWindow
 from apps.screenshots.app import ScreenshotController, ScreenshotHotkey, ScreenshotWindow
@@ -23,7 +37,7 @@ from apps.update_manager.background import BackgroundUpdateWatcher
 from notifications import NotificationCenter
 from profiles import ProfileChooser, ProfileStore
 from shell import DesktopShell
-from system_info import AboutMyOSWindow
+from system_info import AboutNeonVeilWindow
 from taskbar import Taskbar
 
 
@@ -87,7 +101,7 @@ def create_code_studio_window(
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("neonveil")
+    app.setApplicationName("NeonVeil")
     app.setQuitOnLastWindowClosed(False)
     app.aboutToQuit.connect(lambda: QApplication.clipboard().clear())
 
@@ -155,7 +169,7 @@ def main() -> int:
                     original = original.replace(light, dark)
             child.setStyleSheet(original)
 
-    def show_notification(title: str, message: str, app_name: str = "MyOS") -> None:
+    def show_notification(title: str, message: str, app_name: str = "NeonVeil") -> None:
         notifications.notify(title, message, app_name)
 
     def apply_theme(theme: str) -> None:
@@ -184,7 +198,7 @@ def main() -> int:
         taskbar.set_profile(current_profile.username)
         desktop.show()
         taskbar.show()
-        show_notification("Angemeldet", f"Willkommen, {current_profile.username}.", "MyOS")
+        show_notification("Angemeldet", f"Willkommen, {current_profile.username}.", "NeonVeil")
 
     def open_file(path: str) -> None:
         file_path = Path(path).expanduser().absolute()
@@ -258,6 +272,20 @@ def main() -> int:
         )
         taskbar.record_recent("downloads")
 
+    def create_browser_window() -> BrowserWindow | None:
+        try:
+            from apps.browser.app import BrowserWindow
+        except (ImportError, OSError) as error:
+            QMessageBox.critical(
+                desktop,
+                "Browser nicht verfügbar",
+                "Der Webbrowser konnte nicht gestartet werden. "
+                "Die Web-Engine ist auf diesem System nicht verfügbar.\n\n"
+                f"{error}",
+            )
+            return None
+        return BrowserWindow()
+
     def connect_browser_actions(window: BrowserWindow) -> None:
         def open_downloaded_image(path: str) -> None:
             show_notification("Download abgeschlossen", Path(path).name, "Browser")
@@ -268,11 +296,18 @@ def main() -> int:
         window.open_download_folder_requested.connect(open_download_folder)
 
     def open_local_browser(address: str) -> None:
-        window = BrowserWindow()
-        connect_browser_actions(window)
+        window = open_browser_window()
+        if window is None:
+            return
         window.navigate_to_url(address)
         register_window(window)
         taskbar.record_recent("browser")
+
+    def open_browser_window() -> BrowserWindow | None:
+        window = create_browser_window()
+        if window is not None:
+            connect_browser_actions(window)
+        return window
 
     def open_application(app_id: str) -> None:
         taskbar.record_recent(app_id)
@@ -287,7 +322,7 @@ def main() -> int:
         elif app_id == "update-manager":
             window = UpdateManagerWindow()
         elif app_id == "about":
-            window = AboutMyOSWindow()
+            window = AboutNeonVeilWindow()
         elif app_id == "files":
             window = FileManagerWindow(
                 open_file,
@@ -333,7 +368,9 @@ def main() -> int:
         elif app_id == "code":
             window = create_code_studio_window(open_local_browser)
         elif app_id == "browser":
-            window = BrowserWindow()
+            window = create_browser_window()
+            if window is None:
+                return
             connect_browser_actions(window)
         elif app_id == "settings":
             window = create_settings_window(desktop)
@@ -367,7 +404,7 @@ def main() -> int:
     desktop.application_requested.connect(open_application)
     taskbar.application_requested.connect(open_application)
     taskbar.logout_requested.connect(logout)
-    show_notification("MyOS ist bereit", f"Angemeldet als {current_profile.username}.", "MyOS")
+    show_notification("NeonVeil ist bereit", f"Angemeldet als {current_profile.username}.", "NeonVeil")
     desktop.show()
     taskbar.show()
     open_application("welcome")

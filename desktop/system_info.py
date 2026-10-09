@@ -102,10 +102,10 @@ class SystemInfoProvider:
         )
 
 
-class AboutMyOSWindow(QMainWindow):
+class AboutNeonVeilWindow(QMainWindow):
     def __init__(self, provider: SystemInfoProvider | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("Über MyOS")
+        self.setWindowTitle("Über NeonVeil")
         self.setMinimumSize(340, 240)
         self.resize(520, 320)
         self.provider = provider or SystemInfoProvider()
@@ -114,13 +114,13 @@ class AboutMyOSWindow(QMainWindow):
         layout.setContentsMargins(24, 22, 24, 22)
         layout.setHorizontalSpacing(22)
         layout.setVerticalSpacing(12)
-        heading = QLabel("Über MyOS")
+        heading = QLabel("Über NeonVeil")
         heading.setObjectName("heading")
         layout.addWidget(heading, 0, 0, 1, 2)
         self.values: dict[str, QLabel] = {}
         for row, (key, label) in enumerate(
             (
-                ("version", "MyOS-Version"),
+                ("version", "NeonVeil-Version"),
                 ("model", "Raspberry-Pi-Modell"),
                 ("cpu", "Prozessor"),
                 ("cpu_usage", "Prozessorauslastung"),

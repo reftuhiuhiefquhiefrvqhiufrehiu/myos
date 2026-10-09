@@ -1,1 +1,1 @@
-"""The neonveil file manager."""
+"""The NeonVeil file manager."""

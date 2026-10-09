@@ -74,7 +74,7 @@ class DesktopInteractionTests(unittest.TestCase):
             "[Desktop Entry]\nType=Application\nExec=sh -c 'touch /tmp/pwned'\n",
             encoding="utf-8",
         )
-        with self.assertRaisesRegex(ValueError, "Nur sichere MyOS"):
+        with self.assertRaisesRegex(ValueError, "Nur sichere NeonVeil"):
             read_desktop_shortcut(link)
         link.write_text(
             "[Desktop Entry]\nType=Link\nURL=file:///first\nURL=file:///second\n",

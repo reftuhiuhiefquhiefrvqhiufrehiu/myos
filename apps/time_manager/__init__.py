@@ -1,1 +1,1 @@
-"""The neonveil clock, timer, and stopwatch."""
+"""The NeonVeil clock, timer, and stopwatch."""

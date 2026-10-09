@@ -31,12 +31,12 @@ class Taskbar(QWidget):
         ("editor", "Texteditor"),
         ("terminal", "Terminal"),
         ("clock", "Uhr"),
-        ("about", "Über MyOS"),
+        ("about", "Über NeonVeil"),
         ("music", "Musik"),
         ("screenshot", "Screenshot"),
         ("trash", "Papierkorb"),
         ("pi-tools", "Raspberry-Pi-Werkzeuge"),
-        ("update-manager", "MyOS Update Manager"),
+        ("update-manager", "NeonVeil Update Manager"),
     )
 
     def __init__(
@@ -54,7 +54,7 @@ class Taskbar(QWidget):
         self.preferences = settings or QSettings("neonveil", "neonveil")
         self._profile_name = ""
         self.setObjectName("taskbar")
-        self.setWindowTitle("neonveil Taskleiste")
+        self.setWindowTitle("NeonVeil Taskleiste")
         self.setFixedHeight(46)
         screen = QApplication.primaryScreen()
         if screen is not None:
@@ -215,7 +215,7 @@ class Taskbar(QWidget):
         settings_action.triggered.connect(lambda: self._launch("settings"))
         notification_action = menu.addAction("Benachrichtigungen")
         notification_action.triggered.connect(lambda: self._launch("notifications"))
-        about_action = menu.addAction("Über MyOS")
+        about_action = menu.addAction("Über NeonVeil")
         about_action.triggered.connect(lambda: self._launch("about"))
         menu.addSeparator()
 
@@ -315,7 +315,12 @@ class Taskbar(QWidget):
         window.installEventFilter(self)
         window.destroyed.connect(button.deleteLater)
         window.destroyed.connect(lambda: self._remove_task_button(button))
-        window.windowTitleChanged.connect(button.setText)
+
+        def sync_title(new_title: str) -> None:
+            button.setText(new_title)
+            button.setToolTip(new_title)
+
+        window.windowTitleChanged.connect(sync_title)
 
     def eventFilter(self, watched: QWidget, event: QEvent) -> bool:
         if event.type() in (
@@ -353,7 +358,7 @@ class Taskbar(QWidget):
         answer = QMessageBox.question(
             self,
             "Systemaktion bestätigen",
-            f"Möchtest du neonveil wirklich {verb}?",
+            f"Möchtest du NeonVeil wirklich {verb}?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )

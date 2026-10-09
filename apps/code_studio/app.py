@@ -390,7 +390,7 @@ class CodeStudioWindow(QMainWindow):
             selected_path, _filter = QFileDialog.getSaveFileName(
                 self,
                 "Datei speichern",
-                str(Path.home() / "neonveil-datei.html"),
+                str(Path.home() / "NeonVeil-Datei.html"),
                 "HTML (*.html *.htm);;CSS (*.css);;JavaScript (*.js *.mjs);;TypeScript (*.ts *.tsx);;JSON (*.json);;Markdown (*.md);;Text (*.txt);;Alle Dateien (*)",
             )
             if not selected_path:
@@ -585,7 +585,7 @@ class CodeStudioWindow(QMainWindow):
             return
         npm_path = shutil.which("npm")
         if npm_path is None:
-            self._set_status("npm fehlt. Das Paket npm wird im neonveil-Basisbild bereitgestellt.")
+            self._set_status("npm fehlt. Das Paket npm wird im NeonVeil-Basisbild bereitgestellt.")
             return
         if not self._confirm_runtime_action(
             "Projekt starten",

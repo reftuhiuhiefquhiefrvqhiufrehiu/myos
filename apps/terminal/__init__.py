@@ -1,1 +1,1 @@
-"""The neonveil native Linux terminal launcher."""
+"""The NeonVeil native Linux terminal launcher."""

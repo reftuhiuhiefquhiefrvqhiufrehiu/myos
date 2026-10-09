@@ -35,9 +35,9 @@ class ScreenshotController(QObject):
         screenshot_dir = self.pictures_dir / "Screenshots"
         screenshot_dir.mkdir(parents=True, exist_ok=True)
         index = 1
-        while (screenshot_dir / f"MyOS-Screenshot-{index:03}.png").exists():
+        while (screenshot_dir / f"NeonVeil-Screenshot-{index:03}.png").exists():
             index += 1
-        path = screenshot_dir / f"MyOS-Screenshot-{index:03}.png"
+        path = screenshot_dir / f"NeonVeil-Screenshot-{index:03}.png"
         pixmap: QPixmap = screen.grabWindow(0)
         if pixmap.isNull():
             raise OSError("Der Bildschirm konnte nicht aufgenommen werden.")

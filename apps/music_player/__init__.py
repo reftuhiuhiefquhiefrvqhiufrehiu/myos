@@ -1,1 +1,1 @@
-"""MyOS music player."""
+"""NeonVeil music player."""

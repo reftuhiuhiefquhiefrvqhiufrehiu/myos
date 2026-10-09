@@ -1,4 +1,4 @@
-name: Build MyOS update
+name: Build NeonVeil update
 
 on:
   release:

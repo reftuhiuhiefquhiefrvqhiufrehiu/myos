@@ -1,1 +1,1 @@
-"""MyOS screenshot tool."""
+"""NeonVeil screenshot tool."""

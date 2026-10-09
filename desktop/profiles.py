@@ -86,12 +86,12 @@ class ProfileChooser(QDialog):
         self.store = store or ProfileStore()
         self.profile: DesktopProfile | None = None
         self._avatar_path = ""
-        self.setWindowTitle("Bei MyOS anmelden")
+        self.setWindowTitle("Bei NeonVeil anmelden")
         self.setMinimumSize(320, 240)
         self.resize(390, 330)
 
         layout = QVBoxLayout(self)
-        heading = QLabel("Willkommen bei MyOS")
+        heading = QLabel("Willkommen bei NeonVeil")
         heading.setObjectName("heading")
         layout.addWidget(heading)
         layout.addWidget(QLabel("Wähle ein lokales Desktop-Profil oder erstelle ein neues."))

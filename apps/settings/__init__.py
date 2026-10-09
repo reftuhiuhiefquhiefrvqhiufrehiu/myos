@@ -1,1 +1,1 @@
-"""System settings for the neonveil desktop."""
+"""System settings for the NeonVeil desktop."""

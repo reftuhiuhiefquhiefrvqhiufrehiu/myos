@@ -68,7 +68,7 @@ class UpdateWorker(QThread):
 class UpdateManagerWindow(QMainWindow):
     def __init__(self, manager: UpdateManager | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("MyOS Update Manager")
+        self.setWindowTitle("NeonVeil Update Manager")
         self.setMinimumSize(360, 260)
         self.resize(620, 570)
         self.manager = manager or UpdateManager(current_version=APP_VERSION)
@@ -88,7 +88,7 @@ class UpdateManagerWindow(QMainWindow):
         layout = QVBoxLayout(content)
         layout.setContentsMargins(22, 18, 22, 18)
         layout.setSpacing(12)
-        heading = QLabel("MyOS Update Manager")
+        heading = QLabel("NeonVeil Update Manager")
         heading.setObjectName("heading")
         subtitle = QLabel("Updates prüfen, sicher herunterladen und verwalten.")
         subtitle.setObjectName("subtitle")
@@ -294,8 +294,8 @@ class UpdateManagerWindow(QMainWindow):
             if release is None:
                 self.release = None
                 self._clear_release()
-                self.available_version.setText("MyOS ist auf dem neuesten Stand.")
-                self.status_label.setText("MyOS ist auf dem neuesten Stand.")
+                self.available_version.setText("NeonVeil ist auf dem neuesten Stand.")
+                self.status_label.setText("NeonVeil ist auf dem neuesten Stand.")
                 return
             self.release = release
             self._show_release(release)
@@ -313,14 +313,14 @@ class UpdateManagerWindow(QMainWindow):
         elif isinstance(result, UpdateActionResult):
             if result.action == "rollback":
                 self.status_label.setText(
-                    "Die vorherige Version wurde wiederhergestellt. Bitte starte MyOS neu."
+                    "Die vorherige Version wurde wiederhergestellt. Bitte starte NeonVeil neu."
                 )
                 self.reboot_button.setEnabled(True)
             else:
                 self._handle_install_result(result.process)
 
     def _show_release(self, release: UpdateRelease) -> None:
-        self.available_version.setText(f"MyOS {release.version}")
+        self.available_version.setText(f"NeonVeil {release.version}")
         self.release_date.setText(release.release_date)
         self.release_size.setText(self._format_size(release.size))
         self.changelog.setPlainText(release.changelog or "Für diese Version wurde kein Changelog angegeben.")
@@ -331,7 +331,7 @@ class UpdateManagerWindow(QMainWindow):
         self.release = release
         self._show_release(release)
         self.status_label.setText(
-            f"MyOS {release.version} ist verfügbar. SHA-256 wird beim Download geprüft."
+            f"NeonVeil {release.version} ist verfügbar. SHA-256 wird beim Download geprüft."
         )
 
     def install_release(self, release: UpdateRelease) -> None:
@@ -356,8 +356,8 @@ class UpdateManagerWindow(QMainWindow):
             return
         answer = QMessageBox.warning(
             self,
-            "MyOS-Update installieren",
-            "Vor der Installation werden MyOS-Einstellungen und Profile gesichert. "
+            "NeonVeil-Update installieren",
+            "Vor der Installation werden NeonVeil-Einstellungen und Profile gesichert. "
             "Persönliche Dateien bleiben unberührt. Das Update erfordert anschließend "
             "einen Neustart. Jetzt installieren?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
@@ -384,13 +384,13 @@ class UpdateManagerWindow(QMainWindow):
                 if result.returncode == 126:
                     raise UpdateError("Die Installation wurde nicht autorisiert.")
                 raise UpdateError("Die Installation ist fehlgeschlagen. Die bisherige Version bleibt aktiv.", detail)
-            return UpdateActionResult("rollback", result)
+            return UpdateActionResult("install", result)
 
         self._start_worker(operation)
 
     def _handle_install_result(self, _result: subprocess.CompletedProcess[str]) -> None:
         self.status_label.setText(
-            "Update installiert. Bitte starte MyOS neu, damit die neue Version aktiv wird."
+            "Update installiert. Bitte starte NeonVeil neu, damit die neue Version aktiv wird."
         )
         self.install_button.setEnabled(False)
         self.reboot_button.setEnabled(True)
@@ -403,7 +403,7 @@ class UpdateManagerWindow(QMainWindow):
     def reboot(self) -> None:
         answer = QMessageBox.question(
             self,
-            "MyOS neu starten",
+            "NeonVeil neu starten",
             "Möchtest du das System jetzt neu starten?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -417,7 +417,7 @@ class UpdateManagerWindow(QMainWindow):
         answer = QMessageBox.warning(
             self,
             "Vorherige Version wiederherstellen",
-            "Die vorherige MyOS-Version wird aktiviert. Persönliche Dateien und "
+            "Die vorherige NeonVeil-Version wird aktiviert. Persönliche Dateien und "
             "Einstellungen bleiben erhalten. Ein Neustart ist erforderlich. Fortfahren?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
@@ -436,7 +436,7 @@ class UpdateManagerWindow(QMainWindow):
             )
             if result.returncode != 0:
                 raise UpdateError("Die vorherige Version konnte nicht wiederhergestellt werden.", result.stderr)
-            return UpdateActionResult("install", result)
+            return UpdateActionResult("rollback", result)
 
         self._start_worker(operation)
 
