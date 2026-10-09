@@ -2,7 +2,7 @@ import subprocess
 import json
 from typing import Callable
 
-from PySide6.QtCore import QEvent, QSettings, QTime, QTimer, Qt, Signal
+from PySide6.QtCore import QDate, QEvent, QSettings, QTime, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidgetAction,
     QWidget,
 )
+
+from theme import normalize_theme, taskbar_stylesheet
 
 
 class Taskbar(QWidget):
@@ -86,6 +88,12 @@ class Taskbar(QWidget):
         layout.addLayout(self.tasks_layout)
         layout.addStretch(1)
 
+        self.date_label = QLabel()
+        self.date_label.setObjectName("taskbarDate")
+        self.date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.date_label.setAccessibleName("Datum")
+        layout.addWidget(self.date_label)
+
         self.clock = QLabel()
         self.clock.setObjectName("clock")
         self.clock.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -93,53 +101,6 @@ class Taskbar(QWidget):
         self.clock.setAccessibleName("Uhr")
         layout.addWidget(self.clock)
 
-        self._light_stylesheet = """
-            QWidget#taskbar {
-                background: #dbe5e8;
-                border-top: 1px solid #f8fcfd;
-            }
-            QPushButton, QToolButton {
-                color: #20333b;
-                background: #f0f5f6;
-                border: 1px solid #a2b6bc;
-                border-radius: 3px;
-                padding: 5px 10px;
-            }
-            QPushButton:hover, QToolButton:hover {
-                background: #ffffff;
-                border-color: #39817f;
-            }
-            QPushButton:focus, QToolButton:focus {
-                border: 2px solid #176c67;
-                background: #f5fbfa;
-            }
-            QPushButton#startButton {
-                color: #ffffff;
-                font-weight: 600;
-                background: #176c67;
-                border-color: #104e4b;
-            }
-            QPushButton#startButton:hover { background: #247f79; }
-            QToolButton:checked {
-                background: #c6dddc;
-                border-color: #4c8a87;
-            }
-            QLabel#clock {
-                background: #edf3f4;
-                border: 1px solid #a8bbc0;
-                border-radius: 3px;
-                padding: 4px;
-                color: #173d48;
-                font-weight: 600;
-            }
-            QMenu {
-                background: #f8fafb;
-                border: 1px solid #668995;
-                padding: 4px;
-            }
-            QMenu::item { padding: 8px 30px 8px 12px; }
-            QMenu::item:selected { background: #c8e1e7; color: #173d48; }
-            """
         self.set_theme(self.preferences.value("appearance/theme", "light", type=str))
 
         self._update_clock()
@@ -153,6 +114,7 @@ class Taskbar(QWidget):
         now = QTime.currentTime()
         self.clock.setText(now.toString("HH:mm"))
         self.clock.setToolTip(now.toString("HH:mm:ss"))
+        self.date_label.setText(QDate.currentDate().toString("ddd, dd.MM."))
 
     def _show_start_menu(self) -> None:
         menu = self.build_start_menu()
@@ -283,21 +245,8 @@ class Taskbar(QWidget):
         self.start_button.setToolTip(f"Startmenü · angemeldet als {username}")
 
     def set_theme(self, theme: str) -> None:
-        self.theme = "dark" if theme == "dark" else "light"
-        stylesheet = self._light_stylesheet
-        if self.theme == "dark":
-            replacements = {
-                "#dbe5e8": "#252f34", "#f8fcfd": "#43545a",
-                "#f8fafb": "#2b383e",
-                "#20333b": "#e4ecee", "#f0f5f6": "#35464d",
-                "#ffffff": "#202a2f", "#a2b6bc": "#5d747b",
-                "#edf3f4": "#303e44", "#173d48": "#dce9eb",
-                "#f5fbfa": "#30464a", "#c6dddc": "#315550",
-                "#c8e1e7": "#354f55",
-            }
-            for light, dark in replacements.items():
-                stylesheet = stylesheet.replace(light, dark)
-        self.setStyleSheet(stylesheet)
+        self.theme = normalize_theme(theme)
+        self.setStyleSheet(taskbar_stylesheet(self.theme))
 
     def add_window(self, window: QWidget) -> None:
         title = window.windowTitle()

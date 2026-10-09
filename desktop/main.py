@@ -16,9 +16,13 @@ if platform.system() == "Linux":
         "--no-sandbox --disable-gpu --disable-dev-shm-usage",
     )
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QTimer, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
+
+import logging_setup
+from theme import APPLICATION_NAME, ORGANIZATION_DOMAIN, ORGANIZATION_NAME
+from version import APP_VERSION
 
 from apps.code_studio.app import CodeStudioWindow
 from apps.file_manager.app import FileManagerWindow
@@ -100,8 +104,23 @@ def create_code_studio_window(
 
 
 def main() -> int:
+    log = logging_setup.setup_logging()
     app = QApplication(sys.argv)
-    app.setApplicationName("NeonVeil")
+    app.setApplicationName(APPLICATION_NAME)
+    app.setApplicationDisplayName(APPLICATION_NAME)
+    app.setApplicationVersion(APP_VERSION)
+    app.setOrganizationName(ORGANIZATION_NAME)
+    app.setOrganizationDomain(ORGANIZATION_DOMAIN)
+    logging_setup.install_exception_hook(
+        on_error=lambda *_args: QMessageBox.critical(
+            None,
+            "Unerwarteter Fehler",
+            "NeonVeil hat einen unerwarteten Fehler festgestellt.\n"
+            "Details stehen im Protokoll.",
+        )
+    )
+    logging_setup.install_qt_message_handler(log)
+    log.info("NeonVeil %s startet", APP_VERSION)
     app.setQuitOnLastWindowClosed(False)
     app.aboutToQuit.connect(lambda: QApplication.clipboard().clear())
 
@@ -145,6 +164,14 @@ def main() -> int:
         taskbar.add_window(window)
         window.show()
         taskbar.raise_()
+        fade = QPropertyAnimation(window, b"windowOpacity", window)
+        fade.setDuration(160)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.Type.OutCubic)
+        fade.finished.connect(fade.deleteLater)
+        window._neonveil_fade = fade
+        fade.start()
 
     def apply_child_theme(window: QWidget, theme: str) -> None:
         if theme == "dark":

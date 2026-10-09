@@ -381,6 +381,36 @@ PYTHONPATH=desktop:. \
   python3 -m unittest tests.test_file_transfer tests.test_z_desktop_interactions -v
 ```
 
+## Version 1.4.0: Design system, polish, and robustness
+
+Version 1.4.0 raises the whole desktop to a consistent, more polished level and
+hardens it at runtime:
+
+- **Central design system.** `desktop/theme.py` holds the light and dark colour
+  tokens and generates one shared Qt stylesheet for windows, buttons, inputs,
+  menus, scrollbars, tabs, sliders, progress bars, checkboxes, tooltips, and
+  more. Light and dark appearance are generated from the same tokens instead of
+  duplicated hex lists.
+- **Richer visual layer.** The taskbar now uses a gradient surface, a glowing
+  Start button, an accent underline for the active window, and a date next to
+  the clock. The desktop background adds a soft neon bloom and vignette. Windows
+  fade in when they open, and notification popups are rounded cards with a neon
+  accent stripe, a drop shadow, and a fade-in.
+- **Runtime hardening.** `desktop/logging_setup.py` writes a rotating log to
+  `~/.local/share/NeonVeil/logs/neonveil.log`, routes Qt messages into the log,
+  and installs an exception hook that records uncaught errors and shows a clear
+  message instead of failing silently. The app name, version, and organisation
+  are announced to Qt for correct metadata.
+- **Robust image build.** `build-image.sh` now copies every `desktop/*.py`
+  module into the image, so the design system and logging modules ship with the
+  release and future modules cannot be forgotten.
+
+```sh
+PYTHONPATH=desktop:. \
+  QT_QPA_PLATFORM=offscreen \
+  python3 -m unittest discover -s tests -v
+```
+
 ## Project layout
 
 ```text
@@ -392,6 +422,8 @@ apps/file_manager/transfer_ui.py Progress and conflict dialogs
 apps/music_player/    MP3/OGG playlist and playback
 apps/screenshots/     Full-screen capture and Print-key shortcut
 apps/pi_tools/        Local Raspberry Pi network, Bluetooth, GPIO and info tools
+desktop/theme.py      Central light/dark colour tokens and Qt stylesheets
+desktop/logging_setup.py  Rotating log file, Qt message bridge, exception hook
 desktop/profiles.py   Local desktop profile chooser and store
 desktop/notifications.py  Popup notifications and history
 desktop/system_info.py    NeonVeil version and live hardware readings

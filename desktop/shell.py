@@ -2,14 +2,16 @@ import mimetypes
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QFileInfo, QSettings, QSize, Qt, Signal
+from PySide6.QtCore import QFileInfo, QPoint, QSettings, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
+    QFont,
     QKeyEvent,
     QLinearGradient,
     QPainter,
     QPen,
     QPixmap,
+    QRadialGradient,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -25,6 +27,7 @@ from PySide6.QtWidgets import (
 from apps.file_manager.shortcuts import create_desktop_shortcut, read_desktop_shortcut
 from apps.file_manager.transfer_ui import run_transfer
 from apps.file_manager.trash import TrashStore
+from theme import NEON, global_stylesheet, normalize_theme
 
 
 class DesktopShortcutList(QListWidget):
@@ -293,25 +296,47 @@ class DesktopShell(QWidget):
         if self.theme == "dark":
             painter.fillRect(self.rect(), QColor(5, 13, 18, 78))
 
-        painter.setPen(QPen(QColor(142, 226, 218, 42), 1))
+        # A soft neon bloom in the upper corner gives the desktop depth.
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        glow_center = QPoint(int(self.width() * 0.2), int(self.height() * 0.24))
+        glow = QRadialGradient(
+            glow_center, max(self.width(), self.height()) * 0.7
+        )
+        glow.setColorAt(0.0, QColor(53, 201, 189, 64))
+        glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.fillRect(self.rect(), glow)
+
+        painter.setPen(QPen(QColor(142, 226, 218, 48), 1))
         step = 52
         for x in range(0, self.width(), step):
             painter.drawLine(x, 0, x, self.height())
         for y in range(0, self.height(), step):
             painter.drawLine(0, y, self.width(), y)
 
-        painter.setPen(QColor("#f2f7f7"))
-        painter.drawText(
-            36,
-            self.height() - 38,
-            "NeonVeil",
+        vignette = QRadialGradient(
+            self.rect().center(), max(self.width(), self.height()) * 0.72
         )
-        painter.setPen(QColor(230, 246, 245, 185))
+        vignette.setColorAt(0.55, QColor(0, 0, 0, 0))
+        vignette.setColorAt(1.0, QColor(2, 10, 14, 105))
+        painter.fillRect(self.rect(), vignette)
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        title_font = painter.font()
+        title_font.setBold(True)
+        title_font.setPointSizeF(max(13.0, title_font.pointSizeF() + 6))
+        painter.setFont(title_font)
+        painter.setPen(QColor(NEON))
+        painter.drawText(37, self.height() - 36, "NeonVeil")
+        painter.setPen(QColor("#f2f7f7"))
+        painter.drawText(36, self.height() - 38, "NeonVeil")
+        painter.setFont(QFont(title_font.family(), max(8.0, title_font.pointSizeF() - 7)))
+        painter.setPen(QColor(230, 246, 245, 200))
         painter.drawText(
             36,
             self.height() - 18,
             "Ein eigener Desktop für Raspberry Pi",
         )
+        painter.fillRect(36, self.height() - 31, 62, 3, QColor(NEON))
 
     def set_wallpaper(self, style: str, image_path: str = "") -> None:
         self.wallpaper_style = style
@@ -322,7 +347,7 @@ class DesktopShell(QWidget):
         self.update()
 
     def set_theme(self, theme: str) -> None:
-        self.theme = "dark" if theme == "dark" else "light"
+        self.theme = normalize_theme(theme)
         self.update()
 
     def _paint_gradient(self, painter: QPainter, colors: tuple[str, str, str]) -> None:
@@ -542,60 +567,4 @@ class DesktopShell(QWidget):
 
     @staticmethod
     def window_stylesheet(theme: str = "light") -> str:
-        stylesheet = """
-            QMainWindow, QWidget { background: #f0f4f5; color: #20333b; }
-            QLabel#heading { color: #14596a; font-size: 22px; font-weight: 700; }
-            QLabel#subtitle { color: #536c74; }
-            QPushButton, QToolButton, QComboBox {
-                color: #20333b;
-                background: #e8eff1;
-                border: 1px solid #91a8af;
-                border-radius: 3px;
-                padding: 6px 10px;
-            }
-            QPushButton:hover, QToolButton:hover, QComboBox:hover {
-                background: #f7fbfc;
-                border-color: #4d8795;
-            }
-            QPushButton:focus, QToolButton:focus, QComboBox:focus {
-                border: 2px solid #176c67;
-                background: #f5fbfa;
-            }
-            QPushButton:disabled, QToolButton:disabled { color: #73878d; }
-            QLineEdit, QTextEdit, QListWidget, QSpinBox, QTimeEdit {
-                background: #ffffff;
-                border: 1px solid #a9bcc1;
-                border-radius: 3px;
-                selection-background-color: #247b73;
-            }
-            QLineEdit:focus, QTextEdit:focus, QListWidget:focus {
-                border-color: #247b73;
-            }
-            QMenu {
-                background: #f8fafb;
-                border: 1px solid #668995;
-                padding: 4px;
-            }
-            QMenu::item { padding: 7px 28px 7px 12px; }
-            QMenu::item:selected { background: #c8e1e7; color: #173d48; }
-        """
-        if theme == "dark":
-            replacements = {
-                "#f0f4f5": "#252f34",
-                "#f8fafb": "#2b383e",
-                "#ffffff": "#202a2f",
-                "#e8eff1": "#35464d",
-                "#f7fbfc": "#3b4e55",
-                "#f5fbfa": "#30464a",
-                "#20333b": "#e4ecee",
-                "#536c74": "#b3c3c7",
-                "#73878d": "#87999e",
-                "#14596a": "#69bdb1",
-                "#91a8af": "#5d747b",
-                "#a9bcc1": "#536a71",
-                "#c8e1e7": "#354f55",
-                "#173d48": "#dce9eb",
-            }
-            for light, dark in replacements.items():
-                stylesheet = stylesheet.replace(light, dark)
-        return stylesheet
+        return global_stylesheet(theme)

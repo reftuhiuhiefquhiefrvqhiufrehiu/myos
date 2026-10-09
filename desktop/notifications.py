@@ -2,9 +2,17 @@ import json
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPropertyAnimation,
+    QSettings,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QApplication,
+    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -14,6 +22,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from theme import notification_stylesheet, normalize_theme
 
 
 class NotificationStore:
@@ -101,6 +111,16 @@ class NotificationPopup(QWidget):
         self.actions_widget.hide()
         layout.addWidget(self.actions_widget)
         self._action_buttons: list[QPushButton] = []
+        shadow = QGraphicsDropShadowEffect(self)
+        shadow.setBlurRadius(26)
+        shadow.setOffset(0, 6)
+        shadow.setColor(Qt.GlobalColor.black)
+        self.setGraphicsEffect(shadow)
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(180)
+        self._fade.setStartValue(0.0)
+        self._fade.setEndValue(1.0)
+        self._fade.setEasingCurve(QEasingCurve.Type.OutCubic)
         self.set_theme("light")
         self.dismiss_timer = QTimer(self)
         self.dismiss_timer.setSingleShot(True)
@@ -134,6 +154,8 @@ class NotificationPopup(QWidget):
             self.move(area.right() - self.width() - 12, area.bottom() - self.height() - 58)
         self.show()
         self.raise_()
+        self._fade.stop()
+        self._fade.start()
         self.dismiss_timer.start(max(1000, duration_ms))
 
     def _run_action(self, callback: Callable[[], None]) -> None:
@@ -148,26 +170,8 @@ class NotificationPopup(QWidget):
         self.dismissed.emit()
 
     def set_theme(self, theme: str) -> None:
-        if theme == "dark":
-            self.setStyleSheet(
-                """
-                QWidget#notificationPopup { background: #2b383e; color: #e4ecee; border: 1px solid #668995; }
-                QLabel#appName { color: #65b9ae; font-size: 11px; font-weight: 700; }
-                QLabel#title { font-weight: 700; }
-                QPushButton { background: transparent; color: #e4ecee; border: 1px solid transparent; }
-                QPushButton:hover, QPushButton:focus { background: #354f55; border: 1px solid #65b9ae; }
-                """
-            )
-        else:
-            self.setStyleSheet(
-                """
-                QWidget#notificationPopup { background: #f8fafb; color: #20333b; border: 1px solid #668995; }
-                QLabel#appName { color: #176c67; font-size: 11px; font-weight: 700; }
-                QLabel#title { font-weight: 700; }
-                QPushButton { background: transparent; border: 1px solid transparent; }
-                QPushButton:hover, QPushButton:focus { background: #dce9eb; border: 1px solid #176c67; }
-                """
-            )
+        self.theme = normalize_theme(theme)
+        self.setStyleSheet(notification_stylesheet(self.theme))
 
 
 class NotificationHistoryWindow(QMainWindow):

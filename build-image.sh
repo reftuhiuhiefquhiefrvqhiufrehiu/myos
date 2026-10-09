@@ -61,12 +61,7 @@ if [ -e "$CUSTOM_EXPORT_DEST" ]; then
 fi
 cp -R "$CUSTOM_STAGE_SOURCE" "$CUSTOM_STAGE_DEST"
 mkdir -p "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/desktop"
-cp "$ROOT_DIR/desktop/main.py" "$ROOT_DIR/desktop/shell.py" \
-	"$ROOT_DIR/desktop/taskbar.py" \
-	"$ROOT_DIR/desktop/profiles.py" \
-	"$ROOT_DIR/desktop/notifications.py" \
-	"$ROOT_DIR/desktop/system_info.py" \
-	"$ROOT_DIR/desktop/version.py" \
+cp "$ROOT_DIR"/desktop/*.py \
 	"$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/desktop/"
 cp -R "$ROOT_DIR/apps" "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/apps"
 cp -R "$ROOT_DIR/update_manager" \
