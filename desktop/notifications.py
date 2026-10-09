@@ -12,7 +12,6 @@ from PySide6.QtCore import (
 )
 from PySide6.QtWidgets import (
     QApplication,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -111,11 +110,6 @@ class NotificationPopup(QWidget):
         self.actions_widget.hide()
         layout.addWidget(self.actions_widget)
         self._action_buttons: list[QPushButton] = []
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(26)
-        shadow.setOffset(0, 6)
-        shadow.setColor(Qt.GlobalColor.black)
-        self.setGraphicsEffect(shadow)
         self._fade = QPropertyAnimation(self, b"windowOpacity", self)
         self._fade.setDuration(180)
         self._fade.setStartValue(0.0)
