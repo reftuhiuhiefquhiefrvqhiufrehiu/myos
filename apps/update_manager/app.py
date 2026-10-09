@@ -75,6 +75,8 @@ class UpdateManagerWindow(QMainWindow):
         self.release: UpdateRelease | None = None
         self.worker: UpdateWorker | None = None
         self._install_after_download = False
+        self._reboot_available = False
+        self._awaiting_reboot = False
 
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
@@ -163,7 +165,7 @@ class UpdateManagerWindow(QMainWindow):
         self.install_button.setEnabled(False)
         self.install_button.clicked.connect(self.install_update)
         self.reboot_button = QPushButton("Neustart")
-        self.reboot_button.setEnabled(False)
+        self.reboot_button.setEnabled(self._reboot_available)
         self.reboot_button.clicked.connect(self.reboot)
         actions.addWidget(self.check_button, 0, 0)
         actions.addWidget(self.download_button, 0, 1)
@@ -247,6 +249,8 @@ class UpdateManagerWindow(QMainWindow):
         self.changelog.clear()
         self.download_button.setEnabled(False)
         self.install_button.setEnabled(False)
+        self._reboot_available = False
+        self._awaiting_reboot = False
         self.reboot_button.setEnabled(False)
 
     def _start_worker(self, operation: Callable[[], object]) -> None:
@@ -266,6 +270,14 @@ class UpdateManagerWindow(QMainWindow):
         self.check_button.setEnabled(not busy)
         self.channel_combo.setEnabled(not busy)
         self.download_button.setEnabled(not busy and self.release is not None)
+        self.install_button.setEnabled(
+            not busy
+            and not self._awaiting_reboot
+            and self.release is not None
+            and self.manager.downloaded_file(self.release).is_file()
+        )
+        self.rollback_button.setEnabled(not busy and self._has_previous_version())
+        self.reboot_button.setEnabled(not busy and self._reboot_available)
 
     def check_for_updates(self) -> None:
         self.status_label.setText("Suche nach Updates…")
@@ -315,6 +327,8 @@ class UpdateManagerWindow(QMainWindow):
                 self.status_label.setText(
                     "Die vorherige Version wurde wiederhergestellt. Bitte starte NeonVeil neu."
                 )
+                self._awaiting_reboot = True
+                self._reboot_available = True
                 self.reboot_button.setEnabled(True)
             else:
                 self._handle_install_result(result.process)
@@ -390,9 +404,12 @@ class UpdateManagerWindow(QMainWindow):
 
     def _handle_install_result(self, _result: subprocess.CompletedProcess[str]) -> None:
         self.status_label.setText(
-            "Update installiert. Bitte starte NeonVeil neu, damit die neue Version aktiv wird."
+            "Update installiert. Beim nächsten Start wird NeonVeil automatisch geprüft und "
+            "bei einem Fehler auf die vorherige Version zurückgesetzt."
         )
         self.install_button.setEnabled(False)
+        self._awaiting_reboot = True
+        self._reboot_available = True
         self.reboot_button.setEnabled(True)
         self.rollback_button.setEnabled(True)
 

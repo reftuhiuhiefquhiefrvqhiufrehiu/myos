@@ -2,10 +2,13 @@
 
 NeonVeil downloads versioned desktop/application bundles from GitHub Releases. It
 does not execute scripts from a repository checkout. A release bundle contains
-the `VERSION`, `apps/`, `desktop/`, and `update_manager/` files only. NeonVeil
-extracts regular files into a new version directory, validates the contents,
-and atomically changes the `current` symlink. The old version stays installed
-until an administrator deliberately removes it.
+the `VERSION`, `apps/`, `appstore/`, `assets/`, `desktop/`, and
+`update_manager/` files. Downloadable App Store apps are deliberately excluded:
+they remain in the GitHub repository and are installed per user by the App
+Store. NeonVeil extracts regular files into a new version directory, validates
+the required files and every Python source, and atomically changes the `current`
+symlink. The old version stays installed until an administrator deliberately
+removes it.
 
 The updater is designed for Raspberry Pi 4 ARM64 and the current
 Raspberry Pi OS Lite (Debian Trixie) image. It does not update the Linux kernel,
@@ -100,14 +103,21 @@ to the configured repository, and the downloaded SHA-256 matches the manifest
 truncated download is discarded. A failed verification prevents installation.
 
 Installation requires the exact `/usr/bin/myos-update` Polkit action installed
-by the image. The privileged CLI accepts only `install` and `rollback` through
-Polkit; checks and downloads remain unprivileged so a root process never writes
-an archive into a user-controlled cache directory. Archive extraction rejects
+by the image. The privileged CLI accepts only update activation and recovery
+operations through Polkit; checks and downloads remain unprivileged so a root
+process never writes an archive into a user-controlled cache directory. Archive extraction rejects
 absolute paths, `..`, links, devices, and other non-regular file types. The
 manager extracts only into a temporary directory under the releases directory;
 it does not run package hooks or shell scripts. Once staged, it changes
 `current` with an atomic symlink replacement. If staging or activation fails,
 the old `current` link is left in place.
+
+Only one release-changing action may run at a time. The updater holds a
+kernel-managed exclusive lock while installing, rolling back, confirming a
+healthy start, or recovering a failed start; if another operation is already
+active it leaves the current release untouched and reports that the user should
+wait. It also rejects a second installation until the first updated desktop has
+successfully completed its start check, so untested releases cannot be chained.
 
 SHA-256 detects corruption and mismatched release assets; by itself it is not
 an independent publisher signature. Trust is anchored in HTTPS and the
@@ -161,18 +171,27 @@ privileged logs use `/var/log/myos-update.log`.
 
 ## Rollback and recovery
 
-After an update, choose **Vorherige Version wiederherstellen…** in the Update
-Manager or run `myos-update rollback`. Confirm the warning and restart the Pi.
-Rollback atomically switches `current` to the highest previously installed
-lower version. It does not delete the newer version, restore user documents, or
-modify user preferences; those remain as they were.
+After an update, the new release is marked pending until the visible desktop has
+remained alive for 15 seconds. `xinit` records the first trial start. If the
+desktop exits with an error before confirmation, or the next boot finds an
+unconfirmed trial, it atomically returns to the exact release that was active
+before the update and starts it immediately. This recovery state is root-owned
+at `/usr/share/neonveil/.update-recovery.json`; it is removed after a healthy
+start or any manual rollback.
+
+For a manual choice, select **Vorherige Version wiederherstellen…** in the
+Update Manager or run `myos-update rollback`. Rollback atomically switches
+`current` to the highest previously installed lower version. It does not delete
+the newer version, restore user documents, or modify user preferences; those
+remain as they were.
 
 The updater does not automatically reboot or automatically remove old releases.
 Keep enough free SD-card space for the download, extracted staged version, and
 the previous version. If power is lost during download or extraction, the
-active symlink is unchanged. If power is lost after the atomic switch, boot the
-Pi and use rollback if the new desktop is not healthy. Keep a known-good full
-image as the recovery path for SD-card or base-OS failures.
+active symlink is unchanged. If power is lost after the atomic switch, the
+pending-start check restores the prior release on the next boot when needed.
+Keep a known-good full image as the recovery path for SD-card or base-OS
+failures.
 
 ## Testing
 

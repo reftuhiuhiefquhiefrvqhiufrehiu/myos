@@ -1,11 +1,49 @@
 #!/bin/sh
 
-# QtWebEngine (the browser) must not use the Chromium sandbox or GPU on
-# Raspberry Pi OS, otherwise creating a web view can abort the session.
+# QtWebEngine runs in a separate browser process, but these conservative
+# Chromium settings also keep that process reliable on Raspberry Pi OS.
 export QTWEBENGINE_DISABLE_SANDBOX=1
-export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-dev-shm-usage"
+export QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu --disable-gpu-compositing --disable-dev-shm-usage --disable-features=Vulkan"
+export QT_X11_NO_MITSHM=1
 
 openbox-session &
-PYTHONPATH=/usr/share/neonveil/current:/usr/share/neonveil/current/desktop \
-	exec /usr/bin/python3 /usr/share/neonveil/current/desktop/main.py
 
+LOG_DIR="$HOME/.local/share/NeonVeil/logs"
+mkdir -p "$LOG_DIR"
+STARTUP_LOG="$LOG_DIR/startup.log"
+
+run_desktop() {
+	export PYTHONPATH=/usr/share/neonveil/current:/usr/share/neonveil/current/desktop
+	START_TIME=$(date +%s)
+	/usr/bin/python3 /usr/share/neonveil/current/desktop/main.py >> "$STARTUP_LOG" 2>&1
+	EXIT_CODE=$?
+	END_TIME=$(date +%s)
+	RUNTIME=$((END_TIME - START_TIME))
+	return $EXIT_CODE
+}
+
+# An update is initially marked as unconfirmed. This command records its first
+# startup; after a previous failed attempt it atomically restores the exact
+# release that was active before the update. sudo -n never blocks at a prompt.
+if [ -x /usr/bin/myos-update ] && [ -x /usr/bin/sudo ]; then
+	/usr/bin/sudo -n /usr/bin/myos-update recover >> "$STARTUP_LOG" 2>&1 || true
+fi
+
+run_desktop
+DESKTOP_EXIT=$?
+
+# A non-zero desktop exit while the update remains unconfirmed is enough to
+# recover immediately. There is no pipeline here, so the real Python exit code
+# is preserved instead of being hidden by tee.
+if [ "$DESKTOP_EXIT" -ne 0 ]; then
+	echo "[$(date)] NeonVeil desktop exited after ${RUNTIME}s (code $DESKTOP_EXIT)." >> "$STARTUP_LOG"
+	if [ -x /usr/bin/myos-update ] && [ -x /usr/bin/sudo ]; then
+		if /usr/bin/sudo -n /usr/bin/myos-update recover --failed >> "$STARTUP_LOG" 2>&1; then
+			echo "[$(date)] Recovery completed; starting the previous release." >> "$STARTUP_LOG"
+			run_desktop
+			DESKTOP_EXIT=$?
+		fi
+	fi
+fi
+
+exit $DESKTOP_EXIT

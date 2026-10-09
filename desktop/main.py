@@ -13,10 +13,12 @@ os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 if platform.system() == "Linux":
     os.environ.setdefault(
         "QTWEBENGINE_CHROMIUM_FLAGS",
-        "--no-sandbox --disable-gpu --disable-dev-shm-usage",
+        "--no-sandbox --disable-gpu --disable-gpu-compositing "
+        "--disable-dev-shm-usage --disable-features=Vulkan",
     )
+    os.environ.setdefault("QT_X11_NO_MITSHM", "1")
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QWidget
 
@@ -24,7 +26,9 @@ import logging_setup
 from theme import APPLICATION_NAME, ORGANIZATION_DOMAIN, ORGANIZATION_NAME
 from version import APP_VERSION
 
+from apps.app_store.app import AppStoreWindow
 from apps.code_studio.app import CodeStudioWindow
+from appstore.core import AppStore
 from apps.file_manager.app import FileManagerWindow
 from apps.file_manager.shortcuts import read_desktop_shortcut
 from apps.file_manager.trash import TrashWindow
@@ -292,42 +296,55 @@ def main() -> int:
         )
         taskbar.record_recent("downloads")
 
-    def create_browser_window() -> BrowserWindow | None:
-        try:
-            from apps.browser.app import BrowserWindow
-        except (ImportError, OSError) as error:
+    browser_processes: set[QProcess] = set()
+
+    def launch_browser(address: str | None = None) -> bool:
+        """Start Chromium/QtWebEngine outside the desktop process.
+
+        A renderer or graphics-driver crash can then close only the browser,
+        while NeonVeil itself, its taskbar, and the terminal keep running.
+        """
+        release_root = Path(__file__).resolve().parent.parent
+        process = QProcess(app)
+        environment = QProcessEnvironment.systemEnvironment()
+        existing_path = environment.value("PYTHONPATH")
+        environment.insert(
+            "PYTHONPATH",
+            str(release_root) + (os.pathsep + existing_path if existing_path else ""),
+        )
+        environment.insert("QTWEBENGINE_DISABLE_SANDBOX", "1")
+        environment.insert(
+            "QTWEBENGINE_CHROMIUM_FLAGS",
+            "--no-sandbox --disable-gpu --disable-gpu-compositing "
+            "--disable-dev-shm-usage --disable-features=Vulkan",
+        )
+        environment.insert("QT_X11_NO_MITSHM", "1")
+        process.setProcessEnvironment(environment)
+        process.setWorkingDirectory(str(release_root))
+        arguments = ["-m", "apps.browser.app"]
+        if address:
+            arguments.append(address)
+        process.start(sys.executable, arguments)
+        if not process.waitForStarted(5000):
             QMessageBox.critical(
                 desktop,
                 "Browser nicht verfügbar",
-                "Der Webbrowser konnte nicht gestartet werden. "
-                "Die Web-Engine ist auf diesem System nicht verfügbar.\n\n"
-                f"{error}",
+                "Der Browser-Prozess konnte nicht gestartet werden.\n\n"
+                f"{process.errorString()}",
             )
-            return None
-        return BrowserWindow()
-
-    def connect_browser_actions(window: BrowserWindow) -> None:
-        def open_downloaded_image(path: str) -> None:
-            show_notification("Download abgeschlossen", Path(path).name, "Browser")
-            open_file(path)
-
-        window.image_downloaded.connect(open_downloaded_image)
-        window.open_download_requested.connect(open_file)
-        window.open_download_folder_requested.connect(open_download_folder)
+            process.deleteLater()
+            return False
+        browser_processes.add(process)
+        process.finished.connect(
+            lambda _exit_code, _status, proc=process: (
+                browser_processes.discard(proc), proc.deleteLater()
+            )
+        )
+        taskbar.record_recent("browser")
+        return True
 
     def open_local_browser(address: str) -> None:
-        window = open_browser_window()
-        if window is None:
-            return
-        window.navigate_to_url(address)
-        register_window(window)
-        taskbar.record_recent("browser")
-
-    def open_browser_window() -> BrowserWindow | None:
-        window = create_browser_window()
-        if window is not None:
-            connect_browser_actions(window)
-        return window
+        launch_browser(address)
 
     def open_application(app_id: str) -> None:
         taskbar.record_recent(app_id)
@@ -388,16 +405,28 @@ def main() -> int:
         elif app_id == "code":
             window = create_code_studio_window(open_local_browser)
         elif app_id == "browser":
-            window = create_browser_window()
-            if window is None:
-                return
-            connect_browser_actions(window)
+            launch_browser()
+            return
         elif app_id == "settings":
             window = create_settings_window(desktop)
             window.appearance_changed.connect(apply_theme)
             window.update_manager_requested.connect(
                 lambda: open_application("update-manager")
             )
+        elif app_id == "app-store":
+            window = AppStoreWindow(desktop_dir=desktop.desktop_path)
+            window.launch_app_requested.connect(register_window)
+        elif app_id.startswith("store:") or AppStore().is_installed(app_id):
+            clean_id = app_id.removeprefix("store:")
+            try:
+                window = AppStore().load_app_window(clean_id)
+            except Exception as error:
+                QMessageBox.critical(
+                    desktop,
+                    "Anwendung kann nicht gestartet werden",
+                    f"Fehler beim Laden von '{clean_id}':\n{error}",
+                )
+                return
         else:
             window = QMainWindow()
             window.setWindowTitle(desktop.application_title(app_id))
@@ -428,6 +457,17 @@ def main() -> int:
     desktop.show()
     taskbar.show()
     open_application("welcome")
+
+    # The first post-update launch is only confirmed after the visible shell
+    # has stayed alive. If it crashes before this, xinit restores the previous
+    # release instead of leaving the user at a terminal.
+    def confirm_healthy_startup() -> None:
+        update_cli = Path("/usr/bin/myos-update")
+        sudo = Path("/usr/bin/sudo")
+        if update_cli.is_file() and sudo.is_file():
+            QProcess.startDetached(str(sudo), ["-n", str(update_cli), "confirm"])
+
+    QTimer.singleShot(15_000, confirm_healthy_startup)
 
     return app.exec()
 

@@ -234,7 +234,13 @@ class UpdateManagerCoreTests(unittest.TestCase):
             for name, contents in (
                 ("VERSION", version),
                 ("desktop/main.py", "pass\n"),
+                ("desktop/theme.py", "pass\n"),
+                ("desktop/shell.py", "pass\n"),
+                ("desktop/taskbar.py", "pass\n"),
+                ("apps/browser/app.py", "pass\n"),
                 ("apps/update_manager/app.py", "pass\n"),
+                ("apps/app_store/app.py", "pass\n"),
+                ("appstore/core.py", "pass\n"),
                 ("update_manager/core.py", "pass\n"),
             ):
                 data = contents.encode()
@@ -298,6 +304,45 @@ class UpdateManagerCoreTests(unittest.TestCase):
         self.assertEqual(profile_file.read_text(encoding="utf-8"), "personal-settings")
         self.assertEqual(len(manager.history()), 1)
         self.assertTrue(Path(manager.history()[0]["backup"]).is_file())
+        with patch("update_manager.core.os.geteuid", return_value=0):
+            with self.assertRaisesRegex(UpdateError, "Startprüfung"):
+                manager.install(release)
+
+    def test_startup_recovery_restores_previous_release_after_failed_trial(self) -> None:
+        manager = self.manager(current_version="1.1.0")
+        releases = manager.system_root / "releases"
+        previous = releases / "1.0.0"
+        active = releases / "1.1.0"
+        previous.mkdir(parents=True)
+        active.mkdir()
+        current = manager.system_root / "current"
+        current.symlink_to("releases/1.1.0")
+        manager._write_recovery_state("1.1.0", "1.0.0")
+
+        with patch("update_manager.core.os.geteuid", return_value=0):
+            self.assertIn("wird geprüft", manager.prepare_startup_recovery())
+            self.assertEqual(current.resolve(), active.resolve())
+            self.assertIn("automatisch wiederhergestellt", manager.prepare_startup_recovery())
+
+        self.assertEqual(current.resolve(), previous.resolve())
+        self.assertFalse(manager.recovery_path.exists())
+
+    def test_healthy_startup_confirms_pending_release(self) -> None:
+        manager = self.manager(current_version="1.1.0")
+        releases = manager.system_root / "releases"
+        previous = releases / "1.0.0"
+        active = releases / "1.1.0"
+        previous.mkdir(parents=True)
+        active.mkdir()
+        current = manager.system_root / "current"
+        current.symlink_to("releases/1.1.0")
+        manager._write_recovery_state("1.1.0", "1.0.0", attempts=1)
+
+        with patch("update_manager.core.os.geteuid", return_value=0):
+            self.assertTrue(manager.confirm_healthy_startup())
+
+        self.assertEqual(current.resolve(), active.resolve())
+        self.assertFalse(manager.recovery_path.exists())
 
     def test_unsafe_archive_fails_without_changing_active_release(self) -> None:
         manager = self.manager()

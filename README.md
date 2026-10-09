@@ -146,11 +146,43 @@ shell inside a text box; commands run locally with the logged-in user's normal
 permissions.
 
 The **Browser** uses PySide6 QtWebEngine and offers an address bar, Back,
-Forward, Reload, Home, and Downloads controls. Its built-in start page is
+Forward, Reload, Home, and Downloads controls. It runs in its own process with
+Raspberry-Pi-safe Chromium settings, so a renderer or GPU failure can close the
+browser but cannot tear down the NeonVeil desktop. Its built-in start page is
 local, so the browser opens without internet access; loading websites and
 transferring downloads require a network connection. Only HTTP and HTTPS
 addresses are accepted from the address bar. QtWebEngine, `qterminal`,
 `nodejs`, and `npm` are installed from Debian Trixie's repositories.
+
+## App Store
+
+**NeonVeil App Store** lists this project's GitHub app catalog. Apps are not
+baked into the OS image: **Installieren** downloads them from GitHub, verifies
+every catalog SHA-256 checksum, stages them in the user's local app folder, and
+then atomically activates them. The catalog remains visible offline, but
+installing or updating an app needs an internet connection.
+
+Each app lives in its own folder under [`store-apps/`](./store-apps) with an
+`app.json` manifest (`id`, `name`, `version`, `entry`, texts, `category`,
+`author`) plus its Python sources. The manifest `entry` resolves to a
+`QMainWindow` subclass, which the desktop starts in its own window. The
+catalog in [`appstore/catalog.json`](./appstore/catalog.json) is generated from
+those folders and records every file's SHA-256 and the app's total byte size;
+`appstore/core.py` re-checks those digests against the repository before an app
+is activated.
+
+| App | Category | Contents |
+| --- | --- | --- |
+| Neon Calculator | Werkzeuge | Expression calculator with parentheses, percent, powers, and keyboard input; evaluated by a hand-written shunting-yard parser instead of `eval()`. |
+| Einheitenrechner | Werkzeuge | Length, mass, data, speed, area, and temperature conversion with unit swap and clipboard copy. |
+| Neon Sketch | Kreativität | Drawing canvas with a six-colour neon palette, brush size slider, and PNG export to `~/Pictures/NeonVeil`. |
+| Focus Flow | Produktivität | Pomodoro timer with focus/short-break/long-break modes, task label, progress bar, and a daily session counter persisted under `~/.local/share/NeonVeil`. |
+
+Store apps use PySide6 and the standard Python library only, so they need no
+additional runtime packages beyond the desktop itself. A test asserts that every
+folder in `store-apps/` has a valid catalog entry whose checksums match the
+files on disk and whose entry point builds a window, so a new app cannot be
+forgotten in the catalog.
 
 Tests for these applications run with the full desktop suite on Debian Trixie:
 
@@ -270,11 +302,14 @@ PYTHONPATH=desktop:. \
 
 NeonVeil includes a GitHub Release-based **NeonVeil Update Manager**. It checks the
 configured repository for ARM64 Raspberry Pi 4 releases, validates the archive
-size and SHA-256 digest, stages the new desktop version beside the active one,
-and switches the active version atomically. NeonVeil preferences and profiles are
-backed up before installation; personal files are not included in or removed by
-an update. A restart activates the new version. The previous version remains
-available for rollback.
+size and SHA-256 digest, verifies Python files before activation, stages the
+new desktop version beside the active one, and switches the active version
+atomically. NeonVeil preferences and profiles are backed up before installation;
+personal files are not included in or removed by an update. The first launch
+after an update is a health check: if the desktop cannot start, it automatically
+returns to the precise previous release instead of leaving the user at a
+terminal. A restart activates the new version. The previous version remains
+available for manual rollback.
 
 Open **Einstellungen → System · Updates** to choose the Stable, Beta, or
 Developer channel and configure optional checks/downloads/installation, or open
@@ -425,6 +460,10 @@ apps/file_manager/transfer_ui.py Progress and conflict dialogs
 apps/music_player/    MP3/OGG playlist and playback
 apps/screenshots/     Full-screen capture and Print-key shortcut
 apps/pi_tools/        Local Raspberry Pi network, Bluetooth, GPIO and info tools
+apps/app_store/       App Store window, detail dialog, and install cards
+store-apps/           Downloadable App Store apps (catalog sources)
+appstore/core.py      Catalog parsing, download, checksum, and activation logic
+appstore/catalog.json Generated app catalog with SHA-256 digests and sizes
 desktop/theme.py      Central light/dark colour tokens and Qt stylesheets
 desktop/logging_setup.py  Rotating log file, Qt message bridge, exception hook
 desktop/profiles.py   Local desktop profile chooser and store

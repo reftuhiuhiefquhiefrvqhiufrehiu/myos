@@ -124,6 +124,7 @@ class DesktopShell(QWidget):
         ("terminal", "Terminal"),
         ("code", "Code Studio"),
         ("browser", "Browser"),
+        ("app-store", "App Store"),
         ("downloads", "Downloads"),
     )
     APPLICATION_TITLES = {
@@ -136,6 +137,7 @@ class DesktopShell(QWidget):
         "code": "Code Studio",
         "browser": "Browser",
         "downloads": "Downloads",
+        "app-store": "App Store",
         "settings": "Einstellungen",
         "about": "Über NeonVeil",
         "notifications": "Benachrichtigungen",
@@ -227,6 +229,11 @@ class DesktopShell(QWidget):
             "terminal": self.style().StandardPixmap.SP_ComputerIcon,
             "code": self.style().StandardPixmap.SP_FileIcon,
             "browser": self.style().StandardPixmap.SP_DesktopIcon,
+            "app-store": getattr(
+                self.style().StandardPixmap,
+                "SP_DriveNetIcon",
+                self.style().StandardPixmap.SP_FileDialogDetailedView,
+            ),
             "downloads": getattr(
                 self.style().StandardPixmap,
                 "SP_DownloadIcon",

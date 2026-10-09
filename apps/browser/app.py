@@ -1,12 +1,23 @@
+import json
+import os
 import re
 import unicodedata
 import weakref
-import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+# QtWebEngine is Chromium. These settings must exist before its first import;
+# Raspberry Pi GPU/sandbox failures must never take the desktop down.
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+os.environ.setdefault(
+    "QTWEBENGINE_CHROMIUM_FLAGS",
+    "--no-sandbox --disable-gpu --disable-gpu-compositing "
+    "--disable-dev-shm-usage --disable-features=Vulkan",
+)
+os.environ.setdefault("QT_X11_NO_MITSHM", "1")
+
 from PySide6.QtCore import QDateTime, QSettings, QUrl, Signal
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -163,6 +174,7 @@ class BrowserWindow(QMainWindow):
         self.view.titleChanged.connect(self._update_title)
         self.view.loadFinished.connect(self._update_navigation)
         self.view.loadProgress.connect(self._update_progress)
+        self.view.renderProcessTerminated.connect(self._on_render_process_terminated)
         layout.addLayout(navigation)
         layout.addWidget(self.view, 1)
         self.setCentralWidget(content)
@@ -172,7 +184,20 @@ class BrowserWindow(QMainWindow):
         if self._history_load_error:
             self.statusBar().showMessage(self._history_load_error, 10000)
 
+    def _on_render_process_terminated(self, termination_status, exit_code) -> None:
+        # Do not immediately create another renderer while Chromium is tearing
+        # the failed one down. The browser process is isolated from the shell
+        # and the user can explicitly retry with "Neu laden".
+        self.statusBar().showMessage(
+            "Die Webseite wurde beendet. Bitte mit „Neu laden“ erneut versuchen.",
+            15000,
+        )
+
     def closeEvent(self, event: QCloseEvent) -> None:
+        try:
+            self.view.stop()
+        except Exception:
+            pass
         _BROWSER_WINDOWS_BY_PAGE.pop(self.view.page(), None)
         for request, record, callbacks in tuple(self._active_downloads.values()):
             record.state = "cancelled"
@@ -187,8 +212,14 @@ class BrowserWindow(QMainWindow):
                 ),
                 callbacks,
             ):
-                signal.disconnect(callback)
-            request.cancel()
+                try:
+                    signal.disconnect(callback)
+                except Exception:
+                    pass
+            try:
+                request.cancel()
+            except Exception:
+                pass
             self.download_finished.emit(record.path, record.state)
         if self._active_downloads:
             self._active_downloads.clear()
@@ -584,3 +615,31 @@ class BrowserWindow(QMainWindow):
         path = self._selected_download_path()
         folder = path.parent if path is not None else self.default_download_directory()
         self.open_download_folder_requested.emit(str(folder))
+
+
+def main(arguments: list[str] | None = None) -> int:
+    """Run the browser as an isolated process.
+
+    The desktop starts this module separately, so a QtWebEngine/Chromium crash
+    affects only the browser window, never the running NeonVeil session.
+    """
+    import sys
+    from PySide6.QtWidgets import QApplication
+
+    arguments = list(sys.argv[1:] if arguments is None else arguments)
+    app = QApplication([sys.argv[0], *arguments])
+    window = BrowserWindow()
+    window.open_download_requested.connect(
+        lambda path: QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+    )
+    window.open_download_folder_requested.connect(
+        lambda path: QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+    )
+    if arguments and (len(arguments) != 1 or not window.navigate_to_url(arguments[0])):
+        window.statusBar().showMessage("Die angegebene Browser-Adresse ist ungültig.", 10000)
+    window.show()
+    return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

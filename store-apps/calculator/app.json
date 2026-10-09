@@ -1,0 +1,10 @@
+{
+  "id": "calculator",
+  "name": "Neon Calculator",
+  "version": "1.0.0",
+  "entry": "calculator.app:CalculatorWindow",
+  "summary": "Eleganter Taschenrechner für NeonVeil mit Tastatur- und Klammerunterstützung.",
+  "description": "Ein moderner, responsiver Taschenrechner mit Neon-Akzenten, Tastatureingabe, Prozentrechnung und übersichtlicher Ergebnisanzeige.",
+  "category": "Werkzeuge",
+  "author": "NeonVeil Team"
+}

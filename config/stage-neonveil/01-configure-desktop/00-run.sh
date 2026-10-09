@@ -5,13 +5,15 @@ install -D -m 0644 files/autologin.conf \
 install -D -m 0644 files/bash_profile \
 	"${ROOTFS_DIR}/home/${FIRST_USER_NAME}/.bash_profile"
 MYOS_VERSION="$(cat files/release/VERSION)"
-install -D -m 0644 files/xinitrc \
+install -D -m 0755 files/xinitrc \
 	"${ROOTFS_DIR}/usr/share/neonveil/xinitrc"
 install -d -m 0755 \
 	"${ROOTFS_DIR}/usr/share/neonveil/releases/${MYOS_VERSION}"
 cp -R files/release/. \
 	"${ROOTFS_DIR}/usr/share/neonveil/releases/${MYOS_VERSION}/"
 chown -R root:root \
+	"${ROOTFS_DIR}/usr/share/neonveil/releases/${MYOS_VERSION}"
+chmod -R a+rX \
 	"${ROOTFS_DIR}/usr/share/neonveil/releases/${MYOS_VERSION}"
 ln -s "releases/${MYOS_VERSION}" \
 	"${ROOTFS_DIR}/usr/share/neonveil/current"

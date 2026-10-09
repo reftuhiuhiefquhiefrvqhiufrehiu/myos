@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import logging
@@ -18,6 +19,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Callable
+from contextlib import contextmanager
 
 
 DEFAULT_REPOSITORY = "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos"
@@ -171,6 +173,10 @@ class UpdateManager:
             self.status_path = self.state_dir / "status.json"
             self.log_path = self.state_dir / "myos-update.log"
         self.cache_dir = self.home / ".cache/myos/updates"
+        # This file is owned by root beside the versioned releases. It records
+        # one unconfirmed boot after activation, so xinit can return to the
+        # exact previous release if the new desktop fails to start.
+        self.recovery_path = self.system_root / ".update-recovery.json"
         self.repository = repository or self._configured_repository()
         self._validate_repository(self.repository)
         self.preferences = self._load_preferences()
@@ -193,6 +199,35 @@ class UpdateManager:
                 os.chmod(self.log_path, 0o600)
         except OSError as error:
             LOGGER.warning("Update-Log kann nicht vorbereitet werden: %s", error)
+
+    @contextmanager
+    def _exclusive_operation(self):
+        """Serialize all release-changing operations across processes.
+
+        The lock is advisory and automatically released by the kernel if the
+        updater process dies. This prevents install, rollback, and boot
+        recovery from racing over the `current` symlink.
+        """
+        lock_path = self.system_root / ".update.lock"
+        try:
+            lock_path.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+            descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
+        except OSError as error:
+            raise UpdateError("Die Update-Sperre konnte nicht vorbereitet werden.", str(error)) from error
+        try:
+            with os.fdopen(descriptor, "a", encoding="utf-8") as lock_file:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as error:
+                    raise UpdateError(
+                        "Ein anderer NeonVeil-Updatevorgang läuft bereits. Bitte warte, bis er abgeschlossen ist."
+                    ) from error
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        except OSError as error:
+            raise UpdateError("Die Update-Sperre konnte nicht verwendet werden.", str(error)) from error
 
     @staticmethod
     def _owner() -> tuple[int, int]:
@@ -610,9 +645,163 @@ class UpdateManager:
     def downloaded_file(self, release: UpdateRelease) -> Path:
         return self.cache_dir / release.asset_name
 
+    def _write_recovery_state(
+        self,
+        version: str,
+        previous_version: str,
+        *,
+        attempts: int = 0,
+    ) -> None:
+        if attempts < 0 or version == previous_version:
+            raise UpdateError("Der Wiederherstellungsstatus des Updates ist ungültig.")
+        try:
+            parse_version(version)
+            parse_version(previous_version)
+            _atomic_json(
+                self.recovery_path,
+                {
+                    "version": version,
+                    "previous_version": previous_version,
+                    "attempts": attempts,
+                    "created": _now(),
+                },
+            )
+            os.chmod(self.recovery_path, 0o600)
+        except (OSError, ValueError) as error:
+            raise UpdateError(
+                "Der Wiederherstellungspunkt für das Update konnte nicht angelegt werden.",
+                str(error),
+            ) from error
+
+    def _read_recovery_state(self) -> dict[str, Any] | None:
+        if not self.recovery_path.exists():
+            return None
+        try:
+            state = json.loads(self.recovery_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(state, dict)
+                or not isinstance(state.get("version"), str)
+                or not isinstance(state.get("previous_version"), str)
+                or not isinstance(state.get("attempts"), int)
+                or isinstance(state.get("attempts"), bool)
+                or state["attempts"] < 0
+                or state["version"] == state["previous_version"]
+            ):
+                raise ValueError("ungültige Felder")
+            parse_version(state["version"])
+            parse_version(state["previous_version"])
+            return state
+        except (OSError, json.JSONDecodeError, ValueError) as error:
+            raise UpdateError(
+                "Der Wiederherstellungsstatus des Updates ist beschädigt.", str(error)
+            ) from error
+
+    def _clear_recovery_state(self) -> None:
+        try:
+            self.recovery_path.unlink(missing_ok=True)
+        except OSError as error:
+            raise UpdateError(
+                "Der Wiederherstellungsstatus konnte nicht entfernt werden.", str(error)
+            ) from error
+
+    def _restore_recovery_previous(self, state: dict[str, Any], *, reason: str) -> str:
+        releases_dir = self.system_root / "releases"
+        current_link = self.system_root / "current"
+        previous = releases_dir / state["previous_version"]
+        if not previous.is_dir() or previous.is_symlink():
+            raise UpdateError("Die vorherige NeonVeil-Version für die Wiederherstellung fehlt.")
+        self._atomic_activate(previous, current_link)
+        self._clear_recovery_state()
+        self._append_history(
+            {
+                "version": previous.name,
+                "channel": infer_channel(previous.name),
+                "status": reason,
+                "date": _now(),
+                "backup": "",
+            }
+        )
+        self._save_status("recovery", f"NeonVeil-Version {previous.name} wurde automatisch wiederhergestellt.")
+        return previous.name
+
+    def prepare_startup_recovery(self) -> str:
+        """Record the first boot of an update or restore after a failed boot."""
+        if os.geteuid() != 0:
+            raise UpdateError("Für die Startprüfung ist eine Systemberechtigung erforderlich.")
+        with self._exclusive_operation():
+            return self._prepare_startup_recovery_locked()
+
+    def _prepare_startup_recovery_locked(self) -> str:
+        state = self._read_recovery_state()
+        if state is None:
+            return "Kein ausstehender Wiederherstellungspunkt."
+        releases_dir = self.system_root / "releases"
+        current_link = self.system_root / "current"
+        self._validate_current_link(current_link, releases_dir)
+        current = self._current_target(current_link)
+        if current is None or current.name != state["version"]:
+            self._clear_recovery_state()
+            return "Veralteter Wiederherstellungspunkt wurde entfernt."
+        if state["attempts"] >= 1:
+            version = self._restore_recovery_previous(
+                state, reason="Automatisch nach fehlgeschlagenem Start wiederhergestellt"
+            )
+            return f"NeonVeil-Version {version} wurde automatisch wiederhergestellt."
+        self._write_recovery_state(
+            state["version"], state["previous_version"], attempts=state["attempts"] + 1
+        )
+        self._save_status("startup-check", f"NeonVeil-Version {state['version']} wird beim Start geprüft.")
+        return f"NeonVeil-Version {state['version']} wird geprüft."
+
+    def recover_failed_startup(self) -> str:
+        """Immediately switch back when xinit sees a non-zero desktop exit."""
+        if os.geteuid() != 0:
+            raise UpdateError("Für die Wiederherstellung ist eine Systemberechtigung erforderlich.")
+        with self._exclusive_operation():
+            return self._recover_failed_startup_locked()
+
+    def _recover_failed_startup_locked(self) -> str:
+        state = self._read_recovery_state()
+        if state is None:
+            return "Kein ausstehender Wiederherstellungspunkt."
+        releases_dir = self.system_root / "releases"
+        current_link = self.system_root / "current"
+        self._validate_current_link(current_link, releases_dir)
+        current = self._current_target(current_link)
+        if current is None or current.name != state["version"]:
+            self._clear_recovery_state()
+            return "Veralteter Wiederherstellungspunkt wurde entfernt."
+        version = self._restore_recovery_previous(
+            state, reason="Automatisch nach Desktop-Absturz wiederhergestellt"
+        )
+        return f"NeonVeil-Version {version} wurde automatisch wiederhergestellt."
+
+    def confirm_healthy_startup(self) -> bool:
+        """Mark the pending release healthy once the desktop is visibly alive."""
+        if os.geteuid() != 0:
+            raise UpdateError("Für die Startbestätigung ist eine Systemberechtigung erforderlich.")
+        with self._exclusive_operation():
+            return self._confirm_healthy_startup_locked()
+
+    def _confirm_healthy_startup_locked(self) -> bool:
+        state = self._read_recovery_state()
+        if state is None:
+            return False
+        current = self._current_target(self.system_root / "current")
+        if current is None or current.name != state["version"]:
+            self._clear_recovery_state()
+            return False
+        self._clear_recovery_state()
+        self._save_status("startup-check", f"NeonVeil-Version {current.name} wurde erfolgreich gestartet.")
+        return True
+
     def install(self, release: UpdateRelease) -> Path:
         if os.geteuid() != 0:
             raise UpdateError("Zum Installieren ist eine Systemberechtigung erforderlich.")
+        with self._exclusive_operation():
+            return self._install_locked(release)
+
+    def _install_locked(self, release: UpdateRelease) -> Path:
         if not self.architecture.lower() in {"aarch64", "arm64"}:
             raise UpdateError("Dieses Update ist für Raspberry Pi 4 mit ARM64 vorgesehen.")
         if not self._is_raspberry_pi4():
@@ -626,20 +815,36 @@ class UpdateManager:
         releases_dir = self.system_root / "releases"
         current_link = self.system_root / "current"
         self._validate_current_link(current_link, releases_dir)
+        if self._read_recovery_state() is not None:
+            raise UpdateError(
+                "Ein vorheriges Update wartet noch auf seine Startprüfung. "
+                "Bitte starte NeonVeil zuerst neu oder stelle die vorherige Version wieder her."
+            )
+        previous = self._current_target(current_link)
+        if previous is None:
+            raise UpdateError("Die aktuell installierte NeonVeil-Version ist nicht verfügbar.")
         target = releases_dir / release.version
         if target.exists():
             raise UpdateError("Diese Version ist bereits installiert.")
-        backup = self._backup_settings(release.version)
         releases_dir.mkdir(parents=True, exist_ok=True)
         staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=releases_dir))
+        backup: Path | None = None
         try:
             self._extract_release(archive, staging, release)
+            self._verify_staging_release(staging)
+            backup = self._backup_settings(release.version)
             os.replace(staging, target)
+            self._write_recovery_state(release.version, previous.name)
             self._atomic_activate(target, current_link)
         except (OSError, tarfile.TarError, UpdateError) as error:
             shutil.rmtree(staging, ignore_errors=True)
             if target.exists() and self._current_target(current_link) != target.resolve():
                 shutil.rmtree(target, ignore_errors=True)
+            if self._current_target(current_link) == previous.resolve():
+                try:
+                    self._clear_recovery_state()
+                except UpdateError:
+                    pass
             self._save_status("install", "Die Installation ist fehlgeschlagen.")
             if isinstance(error, UpdateError):
                 raise
@@ -673,11 +878,19 @@ class UpdateManager:
     @staticmethod
     def _validate_archive_path(name: str) -> PurePosixPath:
         path = PurePosixPath(name)
+        allowed_roots = {
+            "VERSION",
+            "apps",
+            "appstore",
+            "assets",
+            "desktop",
+            "update_manager",
+        }
         if (
             path.is_absolute()
             or not path.parts
             or any(part in {"", ".", ".."} for part in path.parts)
-            or path.parts[0] not in {"VERSION", "apps", "desktop", "update_manager"}
+            or path.parts[0] not in allowed_roots
             or "\\" in name
         ):
             raise UpdateError("Das Updatearchiv enthält einen ungültigen Dateipfad.")
@@ -708,6 +921,7 @@ class UpdateManager:
                     destination = staging.joinpath(*relative_path.parts)
                     if member.isdir():
                         destination.mkdir(parents=True, exist_ok=True)
+                        os.chmod(destination, 0o755)
                         continue
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     source = bundle.extractfile(member)
@@ -715,7 +929,19 @@ class UpdateManager:
                         raise UpdateError("Eine Datei im Updatearchiv ist beschädigt.")
                     with source, destination.open("xb") as output:
                         shutil.copyfileobj(source, output, CHUNK_SIZE)
-                    os.chmod(destination, 0o644)
+                    is_exec = bool(member.mode & 0o111) or destination.suffix in {".sh"}
+                    os.chmod(destination, 0o755 if is_exec else 0o644)
+
+                # Ensure global readability and directory traversal permissions
+                os.chmod(staging, 0o755)
+                for root, dirs, files in os.walk(staging):
+                    for d in dirs:
+                        os.chmod(os.path.join(root, d), 0o755)
+                    for f in files:
+                        f_path = os.path.join(root, f)
+                        st_mode = os.stat(f_path).st_mode
+                        is_exec = bool(st_mode & 0o111) or f.endswith(".sh")
+                        os.chmod(f_path, 0o755 if is_exec else 0o644)
         except UpdateError:
             raise
         except (OSError, tarfile.TarError) as error:
@@ -731,6 +957,37 @@ class UpdateManager:
             or not (staging / "update_manager/core.py").is_file()
         ):
             raise UpdateError("Die Inhalte des Updatearchivs stimmen nicht mit dem Release überein.")
+
+    @staticmethod
+    def _verify_staging_release(staging: Path) -> None:
+        required_files = (
+            "desktop/main.py",
+            "desktop/theme.py",
+            "desktop/shell.py",
+            "desktop/taskbar.py",
+            "apps/browser/app.py",
+            "apps/update_manager/app.py",
+            "apps/app_store/app.py",
+            "appstore/core.py",
+            "update_manager/core.py",
+        )
+        missing = [path for path in required_files if not (staging / path).is_file()]
+        if missing:
+            raise UpdateError(
+                "Das Update enthält nicht alle notwendigen NeonVeil-Dateien: "
+                + ", ".join(missing)
+            )
+        try:
+            sources = sorted(staging.rglob("*.py"))
+            if not sources:
+                raise ValueError("keine Python-Dateien")
+            for source in sources:
+                compile(source.read_bytes(), str(source), "exec")
+        except (OSError, SyntaxError, UnicodeError, ValueError) as error:
+            raise UpdateError(
+                "Das Update konnte nicht vorab geprüft werden. Die neue Version enthält einen Fehler.",
+                str(error),
+            ) from error
 
     def _backup_settings(self, version: str) -> Path | None:
         candidates = (
@@ -789,6 +1046,10 @@ class UpdateManager:
     def rollback(self) -> str:
         if os.geteuid() != 0:
             raise UpdateError("Zum Wiederherstellen ist eine Systemberechtigung erforderlich.")
+        with self._exclusive_operation():
+            return self._rollback_locked()
+
+    def _rollback_locked(self) -> str:
         releases_dir = self.system_root / "releases"
         current_link = self.system_root / "current"
         self._validate_current_link(current_link, releases_dir)
@@ -809,6 +1070,7 @@ class UpdateManager:
             raise UpdateError("Es wurde keine vorherige NeonVeil-Version für den Rollback gefunden.")
         previous = max(candidates, key=lambda item: _VersionSortKey(item.name))
         self._atomic_activate(previous, current_link)
+        self._clear_recovery_state()
         self._append_history(
             {
                 "version": previous.name,

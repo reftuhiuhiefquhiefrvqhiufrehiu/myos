@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "repository": "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos",
+  "branch": "main",
+  "updated_at": "2026-10-09T19:33:35+00:00",
+  "apps": [
+    {
+      "id": "calculator",
+      "name": "Neon Calculator",
+      "version": "1.0.0",
+      "entry": "calculator.app:CalculatorWindow",
+      "summary": "Eleganter Taschenrechner für NeonVeil mit Tastatur- und Klammerunterstützung.",
+      "description": "Ein moderner, responsiver Taschenrechner mit Neon-Akzenten, Tastatureingabe, Prozentrechnung und übersichtlicher Ergebnisanzeige.",
+      "category": "Werkzeuge",
+      "author": "NeonVeil Team",
+      "size": 11693,
+      "files": {
+        "calculator/__init__.py": "1a6d9b6019dcff19f28a61bb13591744f48b82f034c2e1bd7d1284ed285aeb7b",
+        "calculator/app.json": "e5c3c1504d79c4777d09d92018876d19f9b4dbf941306108f87aa19d09f29925",
+        "calculator/app.py": "1c14ae14a7ae28dd1c7947f735d354626d725270ce15bc5df9b0217140dfc8dd"
+      }
+    },
+    {
+      "id": "unit_converter",
+      "name": "Einheitenrechner",
+      "version": "1.0.0",
+      "entry": "unit_converter.app:UnitConverterWindow",
+      "summary": "Präziser Einheitenumrechner für Längen, Gewichte, Temperaturen und Speicher.",
+      "description": "Konvertiert Einheiten für Längen, Gewichte, Temperaturen, Speichergrößen, Geschwindigkeiten und Flächen in Echtzeit mit Zwischenablagefunktion.",
+      "category": "Werkzeuge",
+      "author": "NeonVeil Team",
+      "size": 9861,
+      "files": {
+        "unit_converter/__init__.py": "d8283253559b394f30668877345e53d8bf45bbfc8c89afd36b3b4bc6adf4b331",
+        "unit_converter/app.json": "2b34bf8e7331f38cf39898f4532d3404ae5733a9b647b97efc9963884c40a34e",
+        "unit_converter/app.py": "f96b542dc53ee30fe34bd265986e030e2e37ba4d9467eeccb06deefac3560f37"
+      }
+    },
+    {
+      "id": "neon_sketch",
+      "name": "Neon Sketch",
+      "version": "1.0.0",
+      "entry": "neon_sketch.app:NeonSketchWindow",
+      "summary": "Schnelles Zeichenstudio mit Neonfarben und PNG-Export.",
+      "description": "Skizziere Ideen, zeichne mit Maus oder Touchpad, wähle leuchtende Farben und speichere dein Bild als PNG in deinem Bilder-Ordner.",
+      "category": "Kreativität",
+      "author": "NeonVeil Team",
+      "size": 7929,
+      "files": {
+        "neon_sketch/__init__.py": "a814ff2eadf146f117e6eecbc0a3a3d8d48aabfd61d77e892b341d4cc32bf178",
+        "neon_sketch/app.json": "e792297b17ecf2c10e71c0cd766d0b4bb7d5d1ad5e235d6ea589e12c21686960",
+        "neon_sketch/app.py": "f54b788c062b3b236201af9950e34d83e3dcd4306ef56697357841982732bf65"
+      }
+    },
+    {
+      "id": "focus_flow",
+      "name": "Focus Flow",
+      "version": "1.0.0",
+      "entry": "focus_flow.app:FocusFlowWindow",
+      "summary": "Schöner Fokus-Timer mit Sessions, Pausen und Tagesfortschritt.",
+      "description": "Focus Flow kombiniert einen klaren Pomodoro-Timer mit Aufgabenfokus, Kurz- und Langpausen sowie einem lokalen Tageszähler.",
+      "category": "Produktivität",
+      "author": "NeonVeil Team",
+      "size": 7700,
+      "files": {
+        "focus_flow/__init__.py": "3a8319b4f07ae6b85366e26740ab09cd365d786cb0aa45b6a555b4b19c0903e8",
+        "focus_flow/app.json": "fbff87ee4a0ef129e8d63ae9572ad64b390e0018cc7f55089e6e991a969705a7",
+        "focus_flow/app.py": "d62171982287924d6e6fa38e85a5b08d7a59b22e61b822b4f2cb9547e67c1160"
+      }
+    }
+  ]
+}

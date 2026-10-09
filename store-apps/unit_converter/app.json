@@ -1,0 +1,10 @@
+{
+  "id": "unit_converter",
+  "name": "Einheitenrechner",
+  "version": "1.0.0",
+  "entry": "unit_converter.app:UnitConverterWindow",
+  "summary": "Präziser Einheitenumrechner für Längen, Gewichte, Temperaturen und Speicher.",
+  "description": "Konvertiert Einheiten für Längen, Gewichte, Temperaturen, Speichergrößen, Geschwindigkeiten und Flächen in Echtzeit mit Zwischenablagefunktion.",
+  "category": "Werkzeuge",
+  "author": "NeonVeil Team"
+}

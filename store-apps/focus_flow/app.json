@@ -1,0 +1,10 @@
+{
+  "id": "focus_flow",
+  "name": "Focus Flow",
+  "version": "1.0.0",
+  "entry": "focus_flow.app:FocusFlowWindow",
+  "summary": "Schöner Fokus-Timer mit Sessions, Pausen und Tagesfortschritt.",
+  "description": "Focus Flow kombiniert einen klaren Pomodoro-Timer mit Aufgabenfokus, Kurz- und Langpausen sowie einem lokalen Tageszähler.",
+  "category": "Produktivität",
+  "author": "NeonVeil Team"
+}

@@ -1,0 +1,10 @@
+{
+  "id": "neon_sketch",
+  "name": "Neon Sketch",
+  "version": "1.0.0",
+  "entry": "neon_sketch.app:NeonSketchWindow",
+  "summary": "Schnelles Zeichenstudio mit Neonfarben und PNG-Export.",
+  "description": "Skizziere Ideen, zeichne mit Maus oder Touchpad, wähle leuchtende Farben und speichere dein Bild als PNG in deinem Bilder-Ordner.",
+  "category": "Kreativität",
+  "author": "NeonVeil Team"
+}

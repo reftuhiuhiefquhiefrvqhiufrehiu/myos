@@ -64,6 +64,10 @@ mkdir -p "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/desktop"
 cp "$ROOT_DIR"/desktop/*.py \
 	"$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/desktop/"
 cp -R "$ROOT_DIR/apps" "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/apps"
+cp -R "$ROOT_DIR/appstore" "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/appstore"
+if [ -d "$ROOT_DIR/assets" ]; then
+	cp -R "$ROOT_DIR/assets" "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/assets"
+fi
 cp -R "$ROOT_DIR/update_manager" \
 	"$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/update_manager"
 cp "$ROOT_DIR/VERSION" "$CUSTOM_STAGE_DEST/01-configure-desktop/files/release/VERSION"

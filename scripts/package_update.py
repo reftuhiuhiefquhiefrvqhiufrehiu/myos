@@ -15,7 +15,13 @@ sys.path.insert(0, str(ROOT))
 
 from update_manager import DEFAULT_REPOSITORY, infer_channel, parse_version
 
-PACKAGE_DIRECTORIES = ("apps", "desktop", "update_manager")
+PACKAGE_DIRECTORIES = (
+    "apps",
+    "appstore",
+    "assets",
+    "desktop",
+    "update_manager",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -48,7 +54,7 @@ def main() -> int:
     asset_name = f"MyOS-{version}-arm64.tar.gz"
     archive = args.output_dir / asset_name
     included_paths = [ROOT / "VERSION"] + [
-        ROOT / directory for directory in PACKAGE_DIRECTORIES
+        ROOT / directory for directory in PACKAGE_DIRECTORIES if (ROOT / directory).exists()
     ]
     with tarfile.open(archive, mode="w:gz", compresslevel=6) as output:
         for source in included_paths:

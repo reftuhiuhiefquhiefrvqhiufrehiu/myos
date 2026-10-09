@@ -42,12 +42,12 @@ def _installed_version() -> str:
     raise UpdateError("Die installierte NeonVeil-Version konnte nicht gelesen werden.")
 
 
-def _elevate(command: str) -> int:
+def _elevate(command: str, *options: str) -> int:
     if not Path("/usr/bin/pkexec").is_file() or not Path("/usr/bin/myos-update").is_file():
         raise UpdateError("Die Systemberechtigung für diesen Vorgang ist nicht verfügbar.")
     try:
         completed = subprocess.run(
-            ["/usr/bin/pkexec", "/usr/bin/myos-update", command],
+            ["/usr/bin/pkexec", "/usr/bin/myos-update", command, *options],
             check=False,
             text=True,
         )
@@ -62,8 +62,22 @@ def build_parser() -> argparse.ArgumentParser:
         description="NeonVeil-Aktualisierungen sicher verwalten.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "download", "install", "status", "rollback", "history"):
+    for name in (
+        "check",
+        "download",
+        "install",
+        "status",
+        "rollback",
+        "history",
+        "confirm",
+    ):
         subparsers.add_parser(name)
+    recover_parser = subparsers.add_parser("recover")
+    recover_parser.add_argument(
+        "--failed",
+        action="store_true",
+        help="stellt nach einem fehlgeschlagenen Desktop-Start sofort wieder her",
+    )
     channel_parser = subparsers.add_parser("channel")
     channel_parser.add_argument("name", nargs="?", choices=CHANNELS)
     return parser
@@ -74,7 +88,7 @@ def main(arguments: list[str] | None = None) -> int:
     if (
         os.geteuid() == 0
         and "PKEXEC_UID" in os.environ
-        and args.command not in {"install", "rollback"}
+        and args.command not in {"install", "rollback", "recover", "confirm"}
     ):
         print(
             "Dieser privilegierte Update-Befehl ist nicht erlaubt.",
@@ -124,6 +138,19 @@ def main(arguments: list[str] | None = None) -> int:
             if os.geteuid() != 0:
                 return _elevate("rollback")
             print(f"NeonVeil-Version {manager.rollback()} wurde wiederhergestellt.")
+            return 0
+        if args.command == "recover":
+            if os.geteuid() != 0:
+                return _elevate("recover", *(["--failed"] if args.failed else []))
+            if args.failed:
+                print(manager.recover_failed_startup())
+            else:
+                print(manager.prepare_startup_recovery())
+            return 0
+        if args.command == "confirm":
+            if os.geteuid() != 0:
+                return _elevate("confirm")
+            manager.confirm_healthy_startup()
             return 0
         release = manager.check_for_updates()
         if release is None:

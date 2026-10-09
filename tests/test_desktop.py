@@ -39,7 +39,7 @@ class DesktopShellTests(unittest.TestCase):
         desktop.application_requested.connect(launched.append)
 
         self.assertIsInstance(desktop.shortcuts, QListWidget)
-        self.assertEqual(desktop.shortcuts.count(), 8)
+        self.assertEqual(desktop.shortcuts.count(), 9)
         item = desktop.shortcuts.item(0)
         desktop.shortcuts.itemDoubleClicked.emit(item)
         self.app.processEvents()
@@ -58,6 +58,7 @@ class DesktopShellTests(unittest.TestCase):
             [action.text() for action in program_menu.actions() if action.text()],
             [
                 "Programme suchen",
+                "App Store",
                 "Bilder",
                 "Browser",
                 "Code Studio",

@@ -24,6 +24,7 @@ class Taskbar(QWidget):
     logout_requested = Signal()
 
     PROGRAMS = (
+        ("app-store", "App Store"),
         ("browser", "Browser"),
         ("code", "Code Studio"),
         ("files", "Dateien"),

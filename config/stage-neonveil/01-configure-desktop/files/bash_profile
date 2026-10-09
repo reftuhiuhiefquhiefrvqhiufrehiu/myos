@@ -5,5 +5,16 @@ fi
 if [ -z "${DISPLAY:-}" ] &&
 	[ "$(tty 2>/dev/null)" = "/dev/tty1" ] &&
 	[ -z "${NEONVEIL_NO_DESKTOP:-}" ]; then
-	exec startx /usr/share/neonveil/xinitrc -- -keeptty
+	startx /usr/share/neonveil/xinitrc -- -keeptty
+	STATUS=$?
+	if [ $STATUS -ne 0 ]; then
+		echo "------------------------------------------------------------"
+		echo "NeonVeil Desktop wurde mit Fehlercode $STATUS beendet."
+		echo "Nach einem Update wird beim nächsten Start automatisch die"
+		echo "vorherige Version wiederhergestellt. Falls nötig, starte jetzt:"
+		echo "    sudo myos-update recover --failed"
+		echo "Details zum Fehler findest du in:"
+		echo "    ~/.local/share/NeonVeil/logs/startup.log"
+		echo "------------------------------------------------------------"
+	fi
 fi
