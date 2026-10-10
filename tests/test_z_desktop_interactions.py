@@ -104,7 +104,7 @@ class DesktopInteractionTests(unittest.TestCase):
             == f"file:{link}"
         )
 
-        desktop._open_shortcut(shortcut_item)
+        desktop._open_entry(shortcut_item)
         self.assertEqual(opened, [str(target)])
         app_item = next(
             desktop.shortcuts.item(index)
@@ -112,7 +112,7 @@ class DesktopInteractionTests(unittest.TestCase):
             if desktop.shortcuts.item(index).data(Qt.ItemDataRole.UserRole)
             == f"file:{app_link}"
         )
-        desktop._open_shortcut(app_item)
+        desktop._open_entry(app_item)
         self.assertEqual(opened_apps, ["settings"])
         desktop._trash_path(link)
         self.assertFalse(link.exists())

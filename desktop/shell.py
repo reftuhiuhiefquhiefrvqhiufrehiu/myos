@@ -286,25 +286,6 @@ class DesktopShell(QWidget):
         )
         super().resizeEvent(event)
 
-    def _open_shortcut(self, item: QListWidgetItem) -> None:
-        value = item.data(Qt.ItemDataRole.UserRole)
-        if value.startswith("app:"):
-            self.application_requested.emit(value.removeprefix("app:"))
-            return
-        path = Path(value.removeprefix("file:"))
-        if path.suffix.casefold() == ".desktop":
-            try:
-                target, app_id = read_desktop_shortcut(path)
-            except (OSError, ValueError) as error:
-                QMessageBox.warning(self, "Verknüpfung kann nicht geöffnet werden", str(error))
-                return
-            if app_id is not None:
-                self.application_requested.emit(app_id)
-            elif target is not None:
-                self.file_requested.emit(str(target))
-            return
-        self.file_requested.emit(str(path))
-
     def create_file_shortcuts(self, paths: list[Path]) -> None:
         errors = []
         for path in paths:
