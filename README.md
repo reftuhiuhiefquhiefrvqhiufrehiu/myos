@@ -267,6 +267,33 @@ operations also work from selection-aware context menus. The trash supports
 multi-item restore and confirmed permanent deletion, including a separately
 confirmed **Papierkorb leeren** action.
 
+### Desktop behaviour
+
+The desktop is a real surface (`desktop/desktop_canvas.py`), not an
+automatically laid-out list. Icons sit where you put them and that position is
+remembered per icon in `desktop/positions`.
+
+| Gesture | Result |
+| --- | --- |
+| Left-drag an icon | Move it on the desktop; it snaps to the grid unless Ctrl is held, which places it freely |
+| Click | Select one icon |
+| Ctrl+click | Add or remove an icon from the selection |
+| Shift+click | Select everything between the last selection and the icon |
+| Drag empty background | Rubber-band selection of every icon it touches |
+| Ctrl+A / Escape | Select all / clear the selection |
+| Arrow keys | Nudge the selection by one cell; Ctrl for a single pixel |
+| Enter | Open the selected icon |
+| Delete | Move the selected desktop files to the trash, or remove app icons |
+| Double-click | Open |
+
+Files arrive by dropping them onto the desktop, which creates desktop links;
+dropping onto a folder icon moves or copies them into it with Ctrl. Dragging
+icons back out uses Shift-drag, so the two directions never conflict.
+
+Icons you have not moved yourself reflow when the desktop changes size, for
+example after a resolution change, and **Symbole anordnen** in the desktop
+context menu snaps every icon back onto the grid.
+
 ## Phase 7: Profiles, appearance, notifications, and Start
 
 At desktop startup, choose a local NeonVeil profile or create one with a username
@@ -477,6 +504,7 @@ store-apps/           Downloadable App Store apps (catalog sources)
 appstore/core.py      Catalog parsing, download, checksum, and activation logic
 appstore/catalog.json Generated app catalog with SHA-256 digests and sizes
 desktop/theme.py      Central light/dark colour tokens and Qt stylesheets
+desktop/desktop_canvas.py  Interactive desktop surface (icons, selection, drag & drop)
 desktop/logging_setup.py  Rotating log file, Qt message bridge, exception hook
 desktop/profiles.py   Local desktop profile chooser and store
 desktop/notifications.py  Popup notifications and history

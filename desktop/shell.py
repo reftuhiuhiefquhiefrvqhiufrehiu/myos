@@ -6,7 +6,6 @@ from PySide6.QtCore import QFileInfo, QPoint, QSettings, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
-    QKeyEvent,
     QLinearGradient,
     QPainter,
     QPen,
@@ -16,8 +15,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QMessageBox,
     QVBoxLayout,
@@ -27,89 +24,8 @@ from PySide6.QtWidgets import (
 from apps.file_manager.shortcuts import create_desktop_shortcut, read_desktop_shortcut
 from apps.file_manager.transfer_ui import run_transfer
 from apps.file_manager.trash import TrashStore
+from desktop.desktop_canvas import DesktopCanvas, DesktopEntry
 from theme import NEON, global_stylesheet, normalize_theme
-
-
-class DesktopShortcutList(QListWidget):
-    files_dropped = Signal(object)
-    paths_dropped_into = Signal(object, object, bool)
-    key_command = Signal(str)
-
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-        self.setDragEnabled(True)
-        self.setDropIndicatorShown(False)
-
-    def mimeData(self, items: list[QListWidgetItem]):
-        from PySide6.QtCore import QMimeData, QUrl
-
-        mime_data = QMimeData()
-        mime_data.setUrls(
-            [
-                QUrl.fromLocalFile(item.data(Qt.ItemDataRole.UserRole + 1))
-                for item in items
-                if item.data(Qt.ItemDataRole.UserRole + 1)
-            ]
-        )
-        return mime_data
-
-    def dragEnterEvent(self, event) -> None:
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-            return
-        event.ignore()
-
-    def dragMoveEvent(self, event) -> None:
-        self.dragEnterEvent(event)
-
-    def dropEvent(self, event) -> None:
-        paths = [
-            Path(url.toLocalFile())
-            for url in event.mimeData().urls()
-            if url.isLocalFile()
-        ]
-        if not paths:
-            event.ignore()
-            return
-        copy = bool(event.keyboardModifiers() & Qt.KeyboardModifier.ControlModifier)
-        target_directory = self._folder_target_at(event.position().toPoint())
-        if target_directory is not None:
-            self.paths_dropped_into.emit(paths, target_directory, copy)
-            event.acceptProposedAction()
-            return
-        self.files_dropped.emit(paths)
-        event.acceptProposedAction()
-
-    def _folder_target_at(self, position) -> Path | None:
-        return self._folder_target_for_item(self.itemAt(position))
-
-    def _folder_target_for_item(self, item: QListWidgetItem | None) -> Path | None:
-        if item is None:
-            return None
-        value = item.data(Qt.ItemDataRole.UserRole)
-        if not value or not value.startswith("file:"):
-            return None
-        path = Path(value.removeprefix("file:"))
-        if path.suffix.casefold() == ".desktop":
-            try:
-                target, app_id = read_desktop_shortcut(path)
-            except (OSError, ValueError):
-                return None
-            if app_id is None and target is not None and target.is_dir():
-                return target
-            return None
-        if path.is_dir():
-            return path
-        return None
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Delete:
-            self.key_command.emit("delete")
-        elif event.key() in {Qt.Key.Key_Return, Qt.Key.Key_Enter}:
-            self.key_command.emit("open")
-        else:
-            super().keyPressEvent(event)
 
 
 class DesktopShell(QWidget):
@@ -179,47 +95,15 @@ class DesktopShell(QWidget):
         else:
             self.resize(1024, 768)
 
-        self.shortcuts = DesktopShortcutList(self)
-        self.shortcuts.setViewMode(QListWidget.ViewMode.IconMode)
-        self.shortcuts.setFlow(QListWidget.Flow.TopToBottom)
-        self.shortcuts.setMovement(QListWidget.Movement.Static)
-        self.shortcuts.setResizeMode(QListWidget.ResizeMode.Adjust)
-        self.shortcuts.setIconSize(QSize(40, 40))
-        self.shortcuts.setGridSize(QSize(110, 78))
-        self.shortcuts.setStyleSheet(
-            """
-            QListWidget {
-                background: transparent;
-                border: none;
-                color: #f2f7f7;
-                outline: none;
-            }
-            QListWidget::item {
-                background: transparent;
-                border: 1px solid transparent;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QListWidget::item:selected {
-                background: rgba(28, 114, 138, 170);
-                border-color: rgba(218, 246, 246, 180);
-            }
-            QListWidget::item:hover {
-                background: rgba(218, 246, 246, 40);
-                border-color: rgba(218, 246, 246, 120);
-            }
-            """
-        )
+        self.shortcuts = DesktopCanvas(self, settings=preferences)
         self.shortcuts.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.shortcuts.customContextMenuRequested.connect(self._show_shortcut_menu)
         self.shortcuts.files_dropped.connect(self.create_file_shortcuts)
         self.shortcuts.paths_dropped_into.connect(self._drop_into_folder)
-        self.shortcuts.key_command.connect(self._handle_shortcut_key)
+        self.shortcuts.itemDoubleClicked.connect(self._open_entry)
         self.refresh_shortcuts()
-        self.shortcuts.itemDoubleClicked.connect(self._open_shortcut)
 
     def refresh_shortcuts(self) -> None:
-        self.shortcuts.clear()
         hidden = set(self.preferences.value("desktop/hidden_app_shortcuts", [], type=list))
         standard_icons = {
             "files": self.style().StandardPixmap.SP_DirIcon,
@@ -240,18 +124,21 @@ class DesktopShell(QWidget):
                 self.style().StandardPixmap.SP_DirIcon,
             ),
         }
+        entries: list[DesktopEntry] = []
         for app_id, label in self.APPLICATIONS:
-            if app_id not in hidden:
-                item = QListWidgetItem(
-                    self.style().standardIcon(standard_icons[app_id]), label
+            if app_id in hidden:
+                continue
+            entries.append(
+                DesktopEntry(
+                    key=f"app:{app_id}",
+                    label=label,
+                    icon=self.style().standardIcon(standard_icons[app_id]),
+                    app_id=app_id,
                 )
-                item.setData(Qt.ItemDataRole.UserRole, f"app:{app_id}")
-                item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
-                item.setToolTip(f"{label} öffnen")
-                self.shortcuts.addItem(item)
+            )
 
         if not self.desktop_path.is_dir():
-            self._resize_shortcut_grid()
+            self.shortcuts.set_entries(entries)
             return
         try:
             paths = sorted(
@@ -259,7 +146,7 @@ class DesktopShell(QWidget):
             )
         except OSError as error:
             QMessageBox.warning(self, "Desktop-Ordner kann nicht gelesen werden", str(error))
-            self._resize_shortcut_grid()
+            self.shortcuts.set_entries(entries)
             return
         for path in paths:
             if path.name.startswith("."):
@@ -270,18 +157,47 @@ class DesktopShell(QWidget):
                 if path.is_dir()
                 else self.style().StandardPixmap.SP_FileIcon
             )
-            item = QListWidgetItem(self.style().standardIcon(icon_kind), label)
-            item.setData(Qt.ItemDataRole.UserRole, f"file:{path}")
-            item.setData(Qt.ItemDataRole.UserRole + 1, str(path))
-            item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
-            item.setToolTip(str(path))
-            self.shortcuts.addItem(item)
-        self._resize_shortcut_grid()
+            entry = DesktopEntry(
+                key=f"file:{path}",
+                label=label,
+                icon=self.style().standardIcon(icon_kind),
+                path=path,
+            )
+            entries.append(entry)
+        self.shortcuts.set_entries(entries)
 
     def _resize_shortcut_grid(self) -> None:
-        self.shortcuts.setFixedWidth(max(0, self.width() - 36))
+        self.shortcuts.setGeometry(
+            0, 0, max(0, self.width()), max(0, self.height() - 90)
+        )
 
-    def paintEvent(self, event) -> None:
+    def _selected_entries(self) -> list[DesktopEntry]:
+        return self.shortcuts.selected_entries()
+
+    def _entry_at(self, position) -> DesktopEntry | None:
+        return self.shortcuts.entry_at(position)
+
+    def _open_entry(self, entry: DesktopEntry | None) -> None:
+        if entry is None:
+            return
+        if entry.app_id is not None:
+            self.application_requested.emit(entry.app_id)
+            return
+        if entry.path is None:
+            return
+        path = entry.path
+        if path.suffix.casefold() == ".desktop":
+            try:
+                target, app_id = read_desktop_shortcut(path)
+            except (OSError, ValueError) as error:
+                QMessageBox.warning(self, "Verknüpfung kann nicht geöffnet werden", str(error))
+                return
+            if app_id is not None:
+                self.application_requested.emit(app_id)
+            elif target is not None:
+                self.file_requested.emit(str(target))
+            return
+        self.file_requested.emit(str(path))
         painter = QPainter(self)
         if self.wallpaper_style == "custom" and self.wallpaper_image_path:
             if not self.wallpaper_pixmap.isNull():
@@ -431,23 +347,36 @@ class DesktopShell(QWidget):
         self.refresh_shortcuts()
 
     def _show_shortcut_menu(self, position) -> None:
-        item = self.shortcuts.itemAt(position)
+        entry = self._entry_at(position)
         menu = QMenu(self)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        if item is not None:
-            if not item.isSelected():
-                self.shortcuts.setCurrentItem(item)
-            value = item.data(Qt.ItemDataRole.UserRole)
-            menu.addAction("Öffnen", lambda: self._open_shortcut(item))
-            if value.startswith("app:"):
-                menu.addAction("Verknüpfung entfernen", self._remove_app_shortcut)
+        if entry is not None:
+            selection = self._selected_entries()
+            if entry not in selection:
+                self.shortcuts.select_only(entry)
+                selection = [entry]
+            if len(selection) > 1:
+                menu.addAction(
+                    f"{len(selection)} Elemente in den Papierkorb verschieben",
+                    lambda: self._trash_entries(selection),
+                )
             else:
-                path = Path(value.removeprefix("file:"))
-                if path.suffix.casefold() == ".desktop":
-                    menu.addAction("Verknüpfung entfernen", lambda: self._trash_path(path))
+                menu.addAction("Öffnen", lambda: self._open_entry(entry))
+            if entry.app_id is not None:
+                menu.addAction("Verknüpfung entfernen", lambda: self._remove_app_shortcut_entry(entry))
+            elif entry.path is not None:
+                if entry.path.suffix.casefold() == ".desktop":
+                    menu.addAction("Verknüpfung entfernen", lambda: self._trash_path(entry.path))
                 else:
-                    menu.addAction("In Papierkorb verschieben", lambda: self._trash_path(path))
-                    menu.addAction("Eigenschaften", lambda: self._show_file_properties(path))
+                    menu.addAction(
+                        "In den Papierkorb verschieben", lambda: self._trash_path(entry.path)
+                    )
+                    menu.addAction(
+                        "Eigenschaften", lambda: self._show_file_properties(entry.path)
+                    )
+            menu.addSeparator()
+            menu.addAction("Symbole anordnen", self.shortcuts.auto_arrange)
+            menu.addAction("Auswahl aufheben", self.shortcuts.clear_selection)
         else:
             create_menu = menu.addMenu("Verknüpfung erstellen")
             for app_id, title in sorted(
@@ -456,19 +385,37 @@ class DesktopShell(QWidget):
                 if app_id == "welcome":
                     continue
                 create_menu.addAction(
-                    title, lambda selected_app=app_id: self.create_application_shortcut(selected_app)
+                    title,
+                    lambda selected_app=app_id: self.create_application_shortcut(selected_app),
                 )
+            menu.addSeparator()
+            menu.addAction("Symbole anordnen", self.shortcuts.auto_arrange)
+            menu.addAction("Alles auswählen", self.shortcuts.select_all)
+            menu.addAction("Auswahl aufheben", self.shortcuts.clear_selection)
         if not menu.isEmpty():
             menu.exec(self.shortcuts.mapToGlobal(position))
 
-    def _remove_app_shortcut(self) -> None:
-        item = self.shortcuts.currentItem()
-        if item is None:
+    def _remove_app_shortcut_entry(self, entry: DesktopEntry) -> None:
+        if entry.app_id is None:
             return
-        app_id = item.data(Qt.ItemDataRole.UserRole).removeprefix("app:")
         hidden = set(self.preferences.value("desktop/hidden_app_shortcuts", [], type=list))
-        hidden.add(app_id)
+        hidden.add(entry.app_id)
         self.preferences.setValue("desktop/hidden_app_shortcuts", sorted(hidden))
+        self.refresh_shortcuts()
+
+    def _remove_app_shortcut(self) -> None:
+        selection = self._selected_entries()
+        if selection:
+            self._remove_app_shortcut_entry(selection[0])
+            return
+        entry = self.shortcuts.selected_entries()[0] if self.shortcuts.selected_entries() else None
+        if entry is not None:
+            self._remove_app_shortcut_entry(entry)
+
+    def _trash_entries(self, entries: list[DesktopEntry]) -> None:
+        for entry in entries:
+            if entry.path is not None:
+                self._trash_path(entry.path)
         self.refresh_shortcuts()
 
     def _trash_path(self, path: Path) -> None:
@@ -509,9 +456,9 @@ class DesktopShell(QWidget):
         )
 
     def _activate_current(self) -> None:
-        item = self.shortcuts.currentItem()
-        if item is not None:
-            self._open_shortcut(item)
+        selection = self._selected_entries()
+        if selection:
+            self._open_entry(selection[0])
 
     def _handle_shortcut_key(self, command: str) -> None:
         if command == "delete":
@@ -520,14 +467,18 @@ class DesktopShell(QWidget):
             self._activate_current()
 
     def _delete_current(self) -> None:
-        item = self.shortcuts.currentItem()
-        if item is None:
+        selection = self._selected_entries()
+        if not selection:
             return
-        value = item.data(Qt.ItemDataRole.UserRole)
-        if value.startswith("app:"):
-            self._remove_app_shortcut()
-        else:
-            self._trash_path(Path(value.removeprefix("file:")))
+        app_entries = [entry for entry in selection if entry.app_id is not None]
+        file_entries = [entry for entry in selection if entry.app_id is None]
+        for entry in file_entries:
+            if entry.path is not None:
+                self._trash_path(entry.path)
+        for entry in app_entries:
+            self._remove_app_shortcut_entry(entry)
+        if file_entries or app_entries:
+            self.refresh_shortcuts()
 
     @classmethod
     def application_title(cls, app_id: str) -> str:

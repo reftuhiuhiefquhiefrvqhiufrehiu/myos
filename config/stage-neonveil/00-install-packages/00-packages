@@ -7,6 +7,7 @@ openbox
 qt6-qpa-plugins
 qt6-image-formats-plugins
 python3-pyside6.qtwidgets
+python3-pyside6.qttest
 python3-pyside6.qtwebenginewidgets
 python3-pyside6.qtmultimedia
 gstreamer1.0-plugins-good

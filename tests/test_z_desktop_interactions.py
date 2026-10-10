@@ -239,7 +239,7 @@ class DesktopInteractionTests(unittest.TestCase):
             if desktop.shortcuts.item(index).data(Qt.ItemDataRole.UserRole)
             == f"file:{link}"
         )
-        self.assertEqual(desktop.shortcuts._folder_target_for_item(item), folder)
+        self.assertEqual(item.folder_target(), folder)
 
         source = self.root / "note.txt"
         source.write_text("data", encoding="utf-8")

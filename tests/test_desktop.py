@@ -8,12 +8,12 @@ from unittest.mock import patch
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
-    QListWidget,
     QMessageBox,
     QToolButton,
 )
 
 from apps.settings.app import SettingsWindow
+from desktop.desktop_canvas import DesktopCanvas, DesktopEntry
 from main import create_code_studio_window, create_settings_window
 from shell import DesktopShell
 from taskbar import Taskbar
@@ -38,10 +38,11 @@ class DesktopShellTests(unittest.TestCase):
         launched = []
         desktop.application_requested.connect(launched.append)
 
-        self.assertIsInstance(desktop.shortcuts, QListWidget)
+        self.assertIsInstance(desktop.shortcuts, DesktopCanvas)
         self.assertEqual(desktop.shortcuts.count(), 9)
-        item = desktop.shortcuts.item(0)
-        desktop.shortcuts.itemDoubleClicked.emit(item)
+        entry = desktop.shortcuts.item(0)
+        self.assertIsInstance(entry, DesktopEntry)
+        desktop.shortcuts.itemDoubleClicked.emit(entry)
         self.app.processEvents()
 
         self.assertEqual(launched, ["files"])
