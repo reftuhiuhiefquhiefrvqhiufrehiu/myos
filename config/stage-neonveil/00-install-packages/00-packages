@@ -22,3 +22,4 @@ qterminal
 alsa-utils
 nodejs
 npm
+ca-certificates

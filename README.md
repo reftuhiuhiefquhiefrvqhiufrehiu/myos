@@ -184,6 +184,18 @@ folder in `store-apps/` has a valid catalog entry whose checksums match the
 files on disk and whose entry point builds a window, so a new app cannot be
 forgotten in the catalog.
 
+Downloads use HTTPS, so the image ships `ca-certificates`. `appstore/core.py`
+additionally looks for the operating system's trust store at the well-known
+locations (Debian, macOS, RHEL, Homebrew) and falls back to `certifi`, because
+some Python builds ship without compiled-in verify paths and would otherwise
+fail every download with `CERTIFICATE_VERIFY_FAILED` even though the system
+itself has working certificates.
+
+Apps install per user into `~/.local/share/NeonVeil/store-apps`. The
+repository's own `store-apps/` is only the catalog source: it is never used as
+an installation target, so a checkout shows its apps as **Verfügbar** and
+installing or removing an app cannot modify the published sources.
+
 Tests for these applications run with the full desktop suite on Debian Trixie:
 
 ```sh

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import inspect
 import json
 import os
 import re
 import shutil
+import ssl
 import sys
 import tempfile
 import urllib.error
@@ -53,6 +55,52 @@ ALLOWED_EXTENSIONS = {
     ".webp",
 }
 ALLOWED_HOSTS = {"raw.githubusercontent.com", "github.com"}
+
+# Well-known CA bundle locations. Python's compiled-in default verify paths are
+# empty in several real setups (python.org builds on macOS, slim container
+# images, some custom Python builds), so every HTTPS request fails with
+# CERTIFICATE_VERIFY_FAILED even though the operating system has a trust store
+# and curl works. The App Store must keep working there.
+CA_BUNDLE_CANDIDATES = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu, Raspberry Pi OS
+    "/etc/ssl/cert.pem",  # macOS system trust store
+    "/etc/pki/tls/certs/ca-bundle.crt",  # RHEL, Fedora, CentOS
+    "/usr/local/etc/openssl@3/cert.pem",  # Homebrew OpenSSL 3
+    "/usr/local/etc/openssl/cert.pem",  # Homebrew OpenSSL
+    "/opt/homebrew/etc/openssl@3/cert.pem",  # Apple Silicon Homebrew
+)
+
+
+def _ca_bundle_candidates() -> list[str]:
+    """Ordered list of CA bundles to try, best source first."""
+    candidates: list[str] = []
+    try:
+        import certifi  # type: ignore[import-not-found]
+
+        candidates.append(certifi.where())
+    except Exception:
+        pass
+    candidates.extend(CA_BUNDLE_CANDIDATES)
+    return candidates
+
+
+def build_ssl_context() -> ssl.SSLContext:
+    """Return a verifying SSL context that actually has root certificates.
+
+    Returns a context that verifies certificates whenever a system trust store
+    can be found. If none is available the default context is returned so the
+    failure stays visible instead of silently disabling verification.
+    """
+    for cafile in _ca_bundle_candidates():
+        try:
+            if not cafile or not Path(cafile).is_file():
+                continue
+            context = ssl.create_default_context(cafile=cafile)
+            if context.get_ca_certs():
+                return context
+        except Exception:
+            continue
+    return ssl.create_default_context()
 
 
 class AppStoreError(Exception):
@@ -146,17 +194,16 @@ class AppStore:
             root_path or Path(__file__).resolve().parent.parent
         ).expanduser().resolve()
         user_store = Path.home() / ".local" / "share" / "NeonVeil" / STORE_DIRECTORY
-        default_dir = self.root_path / STORE_DIRECTORY
-        if not store_dir:
-            if default_dir.is_dir() and os.access(default_dir, os.W_OK):
-                self.store_dir = default_dir.resolve()
-            else:
-                self.store_dir = user_store.resolve()
-        else:
-            self.store_dir = Path(store_dir).resolve()
+        # The repository's own store-apps/ is the catalog *source*, never an
+        # installation target. Installing into it would overwrite the published
+        # app sources, and uninstalling from it would delete them.
+        self.source_dir = self.root_path / STORE_DIRECTORY
+        self.store_dir = Path(store_dir).resolve() if store_dir else user_store.resolve()
 
         self.catalog_path = Path(catalog_path or (self.root_path / CATALOG_PATH)).resolve()
         self.urlopen = urlopen or urllib.request.urlopen
+        self.ssl_context = build_ssl_context()
+        self._urlopen_accepts_context = self._supports_ssl_context(self.urlopen)
 
         self.repository = repository
         self.ref = ref
@@ -166,14 +213,51 @@ class AppStore:
         self._catalog_cache: list[CatalogApp] | None = None
         self.store_dir.mkdir(parents=True, exist_ok=True)
 
-        self.search_dirs: list[Path] = [self.store_dir]
-        for extra in (user_store, default_dir, Path("/usr/share/neonveil/current") / STORE_DIRECTORY):
-            try:
-                resolved = extra.resolve()
-                if resolved not in self.search_dirs and resolved.is_dir():
-                    self.search_dirs.append(resolved)
-            except Exception:
-                pass
+        # Directories that hold apps installed for this user. The catalog source
+        # is deliberately excluded so a repository checkout reports its apps as
+        # available and installable instead of already installed.
+        self.install_dirs: list[Path] = []
+        for candidate in (
+            self.store_dir,
+            Path("/usr/share/neonveil/current") / STORE_DIRECTORY,
+        ):
+            self._add_unique(self.install_dirs, candidate)
+
+        # Launching also works straight from the catalog source, so a checkout
+        # can run its own apps without installing them first.
+        self.search_dirs: list[Path] = list(self.install_dirs)
+        self._add_unique(self.search_dirs, self.source_dir)
+
+    @staticmethod
+    def _supports_ssl_context(urlopen: Callable[..., Any]) -> bool:
+        """Whether ``urlopen`` accepts the ``context`` keyword argument."""
+        try:
+            parameters = inspect.signature(urlopen).parameters
+        except (TypeError, ValueError):
+            return False
+        if "context" in parameters:
+            return True
+        return any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+
+    @staticmethod
+    def _add_unique(dirs: list[Path], candidate: Path, require_dir: bool = True) -> None:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            return
+        if require_dir and not resolved.is_dir():
+            return
+        if resolved not in dirs:
+            dirs.append(resolved)
+
+    def _open_url(self, request: Any, timeout: int) -> Any:
+        """Open a request, using the discovered CA bundle when supported."""
+        if self._urlopen_accepts_context:
+            return self.urlopen(request, timeout=timeout, context=self.ssl_context)
+        return self.urlopen(request, timeout=timeout)
 
     @staticmethod
     def validate_repository(repository: str) -> tuple[str, str]:
@@ -270,15 +354,19 @@ class AppStore:
             },
         )
         try:
-            with self.urlopen(req, timeout=15) as resp:
+            with self._open_url(req, 15) as resp:
                 data = resp.read(MAX_CATALOG_SIZE + 1)
                 if len(data) > MAX_CATALOG_SIZE:
                     raise AppStoreError("Der heruntergeladene Katalog überschreitet die Maximalgröße.")
                 return json.loads(data.decode("utf-8"))
         except urllib.error.HTTPError as error:
+            error.close()
             raise AppStoreError(f"GitHub-Fehler beim Laden des Katalogs (HTTP {error.code}).", str(error)) from error
         except urllib.error.URLError as error:
-            raise AppStoreError("GitHub-Katalog ist derzeit nicht erreichbar.", str(error)) from error
+            raise AppStoreError(
+                "GitHub-Katalog ist derzeit nicht erreichbar. Bitte Internetverbindung prüfen.",
+                str(error),
+            ) from error
         except json.JSONDecodeError as error:
             raise AppStoreError("Ungültiges JSON-Format im GitHub-Katalog.", str(error)) from error
 
@@ -368,10 +456,10 @@ class AppStore:
         return None
 
     def list_installed(self) -> list[InstalledApp]:
-        """Scan store directories for installed applications."""
+        """Scan user installation directories for installed applications."""
         installed_dict: dict[str, InstalledApp] = {}
 
-        for search_dir in self.search_dirs:
+        for search_dir in self.install_dirs:
             if not search_dir.is_dir():
                 continue
             for child in sorted(search_dir.iterdir()):
@@ -531,32 +619,47 @@ class AppStore:
             raise
 
     def _download_and_verify(self, url: str, expected_sha: str, rel_path: str) -> bytes:
-        # Check if local fallback file exists (useful for testing or offline dev repo)
-        candidate_local = self.root_path / "store-apps" / rel_path
-        if not candidate_local.is_file() and not rel_path.startswith(self.store_dir.name):
-            candidate_local = self.root_path / rel_path
+        # Local fallback, only useful in a repository checkout or in tests: the
+        # published file is identical to the one in the catalog. It never
+        # replaces a real download when one is possible.
+        candidate_local = self.root_path / STORE_DIRECTORY / rel_path
 
         data: bytes | None = None
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "NeonVeil-AppStore/1.0"})
-            with self.urlopen(req, timeout=20) as resp:
+            with self._open_url(req, 20) as resp:
                 data = resp.read(MAX_FILE_SIZE + 1)
                 if len(data) > MAX_FILE_SIZE:
                     raise AppStoreError(f"Datei '{rel_path}' überschreitet das Größenlimit.")
         except urllib.error.HTTPError as error:
+            error.close()
             if candidate_local.is_file():
                 data = candidate_local.read_bytes()
             else:
                 raise AppStoreError(
                     f"Download von '{Path(rel_path).name}' von GitHub fehlgeschlagen (HTTP {error.code}). "
-                    f"Bitte prüfe Internetverbindung oder Repository-Status.",
+                    f"Bitte Internetverbindung und Repository '{self.repository}' prüfen.",
+                    str(error),
+                ) from error
+        except urllib.error.URLError as error:
+            # Covers DNS, connection refused, timeouts and TLS trust failures.
+            if candidate_local.is_file():
+                data = candidate_local.read_bytes()
+            else:
+                raise AppStoreError(
+                    f"Download von '{Path(rel_path).name}' fehlgeschlagen. "
+                    "Bitte Internetverbindung prüfen; für HTTPS müssen "
+                    "CA-Zertifikate installiert sein.",
                     str(error),
                 ) from error
         except Exception as error:
             if candidate_local.is_file():
                 data = candidate_local.read_bytes()
             else:
-                raise AppStoreError(f"Download von '{Path(rel_path).name}' fehlgeschlagen: {error}") from error
+                raise AppStoreError(
+                    f"Download von '{Path(rel_path).name}' fehlgeschlagen: {error}",
+                    str(error),
+                ) from error
 
         # Verify SHA256
         sha = hashlib.sha256(data).hexdigest().lower()

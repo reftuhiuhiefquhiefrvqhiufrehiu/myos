@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
+import ssl
 import tempfile
+import urllib.error
 from pathlib import Path
 import unittest
 
@@ -15,6 +17,7 @@ from appstore.core import (
     AppStore,
     AppStoreError,
     CatalogApp,
+    build_ssl_context,
     compare_versions,
     parse_version,
 )
@@ -220,6 +223,139 @@ class TestAppStoreCore(unittest.TestCase):
         with self.assertRaises(AppStoreError):
             self.store.install_app("tampered_app")
 
+    def test_ssl_context_verifies_certificates(self) -> None:
+        context = build_ssl_context()
+        self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
+        self.assertTrue(context.check_hostname)
+        self.assertTrue(context.get_ca_certs())
+
+    def test_catalog_source_is_not_reported_as_installed(self) -> None:
+        """A checkout's own store-apps/ must not look like user installations."""
+        source = self.temp_dir / "checkout"
+        (source / "store-apps" / "ghost_app").mkdir(parents=True, exist_ok=True)
+        (source / "store-apps" / "ghost_app" / "app.py").write_text("# src", encoding="utf-8")
+
+        store = AppStore(
+            store_dir=self.temp_dir / "user-store",
+            catalog_path=self.catalog_path,
+            root_path=source,
+        )
+        self.assertEqual(store.list_installed(), [])
+        # But launching a source app still works without installing it first.
+        self.assertIn((source / "store-apps").resolve(), store.search_dirs)
+
+    def test_install_never_writes_into_catalog_source(self) -> None:
+        catalog = {
+            "version": 1,
+            "apps": [
+                {
+                    "id": "safe_app",
+                    "name": "Safe App",
+                    "version": "1.0.0",
+                    "entry": "safe_app.app:SafeWindow",
+                    "summary": "Test",
+                    "category": "Werkzeuge",
+                    "files": {"safe_app/app.py": "safe_app_hash"},
+                }
+            ],
+        }
+        self.catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+        source = self.temp_dir / "checkout"
+        (source / "store-apps" / "safe_app").mkdir(parents=True, exist_ok=True)
+        original = b"# original source\n"
+        (source / "store-apps" / "safe_app" / "app.py").write_bytes(original)
+        real_sha = hashlib.sha256(original).hexdigest()
+        catalog["apps"][0]["files"]["safe_app/app.py"] = real_sha
+        self.catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+        store = AppStore(
+            store_dir=self.temp_dir / "user-store",
+            catalog_path=self.catalog_path,
+            root_path=source,
+        )
+        store.install_app("safe_app")
+
+        installed_file = self.temp_dir / "user-store" / "safe_app" / "app.py"
+        self.assertTrue(installed_file.is_file())
+        self.assertEqual(
+            (source / "store-apps" / "safe_app" / "app.py").read_bytes(),
+            original,
+            "Das Katalog-Quellverzeichnis darf nicht verändert werden",
+        )
+
+    def test_download_failure_message_is_actionable(self) -> None:
+        catalog = {
+            "version": 1,
+            "apps": [
+                {
+                    "id": "offline_app",
+                    "name": "Offline",
+                    "version": "1.0.0",
+                    "entry": "offline_app.app:OfflineWindow",
+                    "summary": "Test",
+                    "category": "Werkzeuge",
+                    "files": {"offline_app/app.py": "a" * 64},
+                }
+            ],
+        }
+        self.catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+
+        # root_path points at an empty directory, so no local fallback exists.
+        empty_root = self.temp_dir / "empty-root"
+        empty_root.mkdir(parents=True, exist_ok=True)
+
+        def broken_urlopen(*args: object, **kwargs: object):
+            raise urllib.error.URLError("kein Netz")
+
+        store = AppStore(
+            store_dir=self.temp_dir / "user-store",
+            catalog_path=self.catalog_path,
+            root_path=empty_root,
+            urlopen=broken_urlopen,
+        )
+        with self.assertRaises(AppStoreError) as caught:
+            store.install_app("offline_app")
+        message = caught.exception.user_message
+        self.assertIn("app.py", message)
+        self.assertIn("Internetverbindung", message)
+        self.assertIn("CA-Zertifikate", message)
+
+    def test_download_passes_ssl_context(self) -> None:
+        seen: dict[str, object] = {}
+
+        class FakeResponse:
+            PAYLOAD = b"# fake app\n"
+
+            def __init__(self, payload: bytes | None = None) -> None:
+                self._payload = self.PAYLOAD if payload is None else payload
+
+            def read(self, amount: int = -1) -> bytes:
+                return self._payload[:amount]
+
+            def __enter__(self) -> "FakeResponse":
+                return self
+
+            def __exit__(self, *exc: object) -> bool:
+                return False
+
+        def fake_urlopen(request: object, timeout: float = 0, context: object = None) -> FakeResponse:
+            seen["timeout"] = timeout
+            seen["context"] = context
+            return FakeResponse()
+
+        payload_sha = hashlib.sha256(FakeResponse.PAYLOAD).hexdigest()
+        store = AppStore(
+            store_dir=self.temp_dir / "user-store",
+            catalog_path=self.catalog_path,
+            root_path=self.temp_dir,
+            urlopen=fake_urlopen,
+        )
+        self.assertTrue(store._urlopen_accepts_context)
+        data = store._download_and_verify("https://example.test/x.py", payload_sha, "x/app.py")
+        self.assertEqual(data, FakeResponse.PAYLOAD)
+        self.assertIs(seen["context"], store.ssl_context)
+
 
 class TestStoreAppsUI(unittest.TestCase):
     @classmethod
@@ -387,6 +523,29 @@ class TestStoreAppsUI(unittest.TestCase):
                 if hasattr(window, "close"):
                     window.close()
                     window.deleteLater()
+
+    def test_catalog_files_are_publicly_downloadable(self) -> None:
+        """The published repository must actually serve every catalog file.
+
+        This is the end-to-end path the App Store uses on a device: without a
+        matching local fallback the download has to succeed over HTTPS, which
+        also proves the CA trust store works on this host.
+        """
+        temp_dir = Path(tempfile.mkdtemp(prefix="test_appstore_download_"))
+        try:
+            # An empty root_path guarantees there is no local fallback file.
+            store = AppStore(root_path=temp_dir)
+            for app in store.fetch_catalog(force_remote=False):
+                for rel_path, expected_sha in app.files.items():
+                    url = store.file_url(rel_path)
+                    self.assertTrue(
+                        url.startswith(store.raw_base_url() + "/store-apps/"),
+                        f"Unerwartete Download-URL: {url}",
+                    )
+                    data = store._download_and_verify(url, expected_sha, rel_path)
+                    self.assertEqual(hashlib.sha256(data).hexdigest(), expected_sha, rel_path)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     def test_app_store_window(self) -> None:
         store = AppStore()
