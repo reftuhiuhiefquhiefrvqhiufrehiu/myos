@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import ssl
+import subprocess
 import sys
 import tempfile
 import urllib.error
@@ -15,6 +16,7 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
@@ -25,6 +27,7 @@ CATALOG_PATH = "appstore/catalog.json"
 
 MAX_CATALOG_SIZE = 512 * 1024
 MAX_FILE_SIZE = 5 * 1024 * 1024
+MAX_DEB_SIZE = 200 * 1024 * 1024  # 200 MB for .deb packages
 MAX_TOTAL_SIZE = 32 * 1024 * 1024
 MAX_FILE_COUNT = 200
 CHUNK_SIZE = 64 * 1024
@@ -53,8 +56,15 @@ ALLOWED_EXTENSIONS = {
     ".gif",
     ".ico",
     ".webp",
+    ".deb",
 }
 ALLOWED_HOSTS = {"raw.githubusercontent.com", "github.com"}
+
+
+class AppType(Enum):
+    PYTHON = "python"
+    DEB = "deb"
+
 
 # Well-known CA bundle locations. Python's compiled-in default verify paths are
 # empty in several real setups (python.org builds on macOS, slim container
@@ -160,6 +170,14 @@ class CatalogApp:
     author: str = "NeonVeil"
     size: int = 0
     files: dict[str, str] = field(default_factory=dict)
+    app_type: AppType = AppType.PYTHON
+    # Deb-specific fields (used when app_type == AppType.DEB)
+    deb_url: str = ""
+    deb_sha256: str = ""
+    deb_size: int = 0
+    architecture: str = "arm64"
+    dependencies: tuple[str, ...] = field(default_factory=tuple)
+    desktop_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -392,8 +410,6 @@ class AppStore:
                 continue
 
             entry = raw.get("entry", f"{app_id}.app:{app_id.capitalize()}Window")
-            if not ENTRY_PATTERN.fullmatch(entry):
-                continue
 
             summary = str(raw.get("summary", ""))
             description = str(raw.get("description", ""))
@@ -401,46 +417,123 @@ class AppStore:
             author = str(raw.get("author", "NeonVeil"))
             size = int(raw.get("size", 0))
 
-            files = raw.get("files", {})
-            if not isinstance(files, dict) or not files:
-                continue
+            # Parse app type
+            app_type_str = str(raw.get("app_type", "python")).lower()
+            try:
+                app_type = AppType(app_type_str)
+            except ValueError:
+                app_type = AppType.PYTHON
 
-            # Validate files
-            validated_files: dict[str, str] = {}
-            for rel_path, sha in files.items():
-                if not isinstance(rel_path, str) or not isinstance(sha, str):
+            if app_type == AppType.DEB:
+                # For deb apps, entry can be a .desktop file name, no strict pattern required
+                if not entry:
+                    entry = f"{app_id}.desktop"
+                
+                # Validate deb-specific fields
+                deb_url = str(raw.get("deb_url", ""))
+                if not deb_url:
                     continue
-                clean_rel = rel_path.strip().lstrip("/")
-                if (
-                    not SAFE_PATH_PATTERN.fullmatch(clean_rel)
-                    or ".." in clean_rel
-                    or not clean_rel.startswith(f"{app_id}/")
-                ):
+                deb_sha256 = str(raw.get("deb_sha256", ""))
+                if not SHA256_PATTERN.fullmatch(deb_sha256.lower()):
                     continue
-                ext = Path(clean_rel).suffix.lower()
-                if ext not in ALLOWED_EXTENSIONS:
+                deb_size = int(raw.get("deb_size", 0))
+                if deb_size <= 0 or deb_size > MAX_DEB_SIZE:
                     continue
-                if not SHA256_PATTERN.fullmatch(sha.lower()):
+                architecture = str(raw.get("architecture", "arm64")).lower()
+                if architecture not in ("arm64", "amd64", "all"):
                     continue
-                validated_files[clean_rel] = sha.lower()
+                deps_raw = raw.get("dependencies", [])
+                if not isinstance(deps_raw, list):
+                    continue
+                dependencies = tuple(str(d) for d in deps_raw if isinstance(d, str) and re.fullmatch(r"^[a-z0-9][a-z0-9+.-]{0,40}$", d))
+                desktop_file = str(raw.get("desktop_file", ""))
 
-            if not validated_files:
-                continue
+                # For deb apps, files can be empty or contain metadata
+                files = raw.get("files", {})
+                validated_files: dict[str, str] = {}
+                for rel_path, sha in files.items():
+                    if not isinstance(rel_path, str) or not isinstance(sha, str):
+                        continue
+                    clean_rel = rel_path.strip().lstrip("/")
+                    if (
+                        not SAFE_PATH_PATTERN.fullmatch(clean_rel)
+                        or ".." in clean_rel
+                        or not clean_rel.startswith(f"{app_id}/")
+                    ):
+                        continue
+                    ext = Path(clean_rel).suffix.lower()
+                    if ext not in ALLOWED_EXTENSIONS:
+                        continue
+                    if not SHA256_PATTERN.fullmatch(sha.lower()):
+                        continue
+                    validated_files[clean_rel] = sha.lower()
 
-            apps.append(
-                CatalogApp(
-                    id=app_id,
-                    name=name,
-                    version=version,
-                    entry=entry,
-                    summary=summary,
-                    description=description,
-                    category=category,
-                    author=author,
-                    size=size,
-                    files=validated_files,
+                apps.append(
+                    CatalogApp(
+                        id=app_id,
+                        name=name,
+                        version=version,
+                        entry=entry,
+                        summary=summary,
+                        description=description,
+                        category=category,
+                        author=author,
+                        size=size,
+                        files=validated_files,
+                        app_type=AppType.DEB,
+                        deb_url=deb_url,
+                        deb_sha256=deb_sha256.lower(),
+                        deb_size=deb_size,
+                        architecture=architecture,
+                        dependencies=dependencies,
+                        desktop_file=desktop_file,
+                    )
                 )
-            )
+            else:
+                # Python app validation (existing logic)
+                entry = raw.get("entry", f"{app_id}.app:{app_id.capitalize()}Window")
+                if not ENTRY_PATTERN.fullmatch(entry):
+                    continue
+
+                files = raw.get("files", {})
+                if not isinstance(files, dict) or not files:
+                    continue
+
+                validated_files: dict[str, str] = {}
+                for rel_path, sha in files.items():
+                    if not isinstance(rel_path, str) or not isinstance(sha, str):
+                        continue
+                    clean_rel = rel_path.strip().lstrip("/")
+                    if (
+                        not SAFE_PATH_PATTERN.fullmatch(clean_rel)
+                        or ".." in clean_rel
+                        or not clean_rel.startswith(f"{app_id}/")
+                    ):
+                        continue
+                    ext = Path(clean_rel).suffix.lower()
+                    if ext not in ALLOWED_EXTENSIONS:
+                        continue
+                    if not SHA256_PATTERN.fullmatch(sha.lower()):
+                        continue
+                    validated_files[clean_rel] = sha.lower()
+
+                if not validated_files:
+                    continue
+
+                apps.append(
+                    CatalogApp(
+                        id=app_id,
+                        name=name,
+                        version=version,
+                        entry=entry,
+                        summary=summary,
+                        description=description,
+                        category=category,
+                        author=author,
+                        size=size,
+                        files=validated_files,
+                    )
+                )
 
         return apps
 
@@ -531,6 +624,169 @@ class AppStore:
         except ValueError:
             return cat_app.version != installed.version
 
+    def _install_deb_app(
+        self,
+        cat_app: CatalogApp,
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> InstalledApp:
+        """Download and install a .deb package with dependency resolution."""
+        if cat_app.app_type != AppType.DEB:
+            raise AppStoreError("Nur für .deb-Pakete anwendbar.")
+
+        staging_dir = self.store_dir / f".staging_{cat_app.id}_{os.getpid()}"
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        staging_dir.mkdir(parents=True, exist_ok=True)
+
+        target_dir = self.store_dir / cat_app.id
+        deb_path = staging_dir / f"{cat_app.id}.deb"
+
+        try:
+            # 1. Download .deb file
+            if progress_callback:
+                progress_callback(0, 4, f"Lade {cat_app.name} herunter...")
+            deb_data = self._download_and_verify(cat_app.deb_url, cat_app.deb_sha256, f"{cat_app.id}.deb")
+            if len(deb_data) != cat_app.deb_size:
+                raise AppStoreError("Größe des .deb-Pakets stimmt nicht mit dem Katalog überein.")
+            deb_path.write_bytes(deb_data)
+
+            # 2. Install dependencies
+            if progress_callback:
+                progress_callback(1, 4, "Installiere Abhängigkeiten...")
+            if cat_app.dependencies:
+                self._install_dependencies(cat_app.dependencies, progress_callback)
+
+            # 3. Install .deb package
+            if progress_callback:
+                progress_callback(2, 4, f"Installiere {cat_app.name}...")
+            self._install_deb_package(deb_path, cat_app.architecture)
+
+            # 4. Extract desktop file for application menu
+            if progress_callback:
+                progress_callback(3, 4, "Richte Anwendung ein...")
+            desktop_file = self._extract_desktop_file(deb_path, cat_app.id, cat_app.name, cat_app.desktop_file)
+
+            # 5. Create manifest and finalize
+            if progress_callback:
+                progress_callback(4, 4, "Installation wird abgeschlossen...")
+            now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            manifest_path = staging_dir / "app.json"
+            manifest_data = {
+                "id": cat_app.id,
+                "name": cat_app.name,
+                "version": cat_app.version,
+                "entry": cat_app.entry,
+                "summary": cat_app.summary,
+                "description": cat_app.description,
+                "category": cat_app.category,
+                "author": cat_app.author,
+                "installed": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "app_type": "deb",
+                "desktop_file": desktop_file,
+            }
+            manifest_path.write_text(json.dumps(manifest_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            # Atomically replace destination
+            target_dir = self.store_dir / cat_app.id
+            if target_dir.exists():
+                old_dir = self.store_dir / f".old_{cat_app.id}_{os.getpid()}"
+                target_dir.replace(old_dir)
+                staging_dir.replace(target_dir)
+                shutil.rmtree(target_dir, ignore_errors=True)
+            else:
+                staging_dir.replace(target_dir)
+
+            return InstalledApp(
+                id=cat_app.id,
+                name=cat_app.name,
+                version=cat_app.version,
+                entry=cat_app.entry,
+                installed=now_iso,
+                category=cat_app.category,
+                summary=cat_app.summary,
+                author=cat_app.author,
+                path=target_dir,
+            )
+
+        except Exception:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise
+
+    def _install_dependencies(
+        self,
+        dependencies: tuple[str, ...],
+        progress_callback: Callable[[int, int, str], None] | None = None,
+    ) -> None:
+        """Install apt dependencies."""
+        if not dependencies:
+            return
+        try:
+            # Update package list
+            subprocess.run(["apt-get", "update"], check=True, capture_output=True)
+            # Install dependencies
+            cmd = ["apt-get", "install", "-y", "--no-install-recommends"] + list(dependencies)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+            if progress_callback:
+                progress_callback(1, 1, f"Abhängigkeiten installiert: {', '.join(dependencies)}")
+        except subprocess.CalledProcessError as e:
+            raise AppStoreError(
+                f"Fehler beim Installieren der Abhängigkeiten: {e.stderr or str(e)}"
+            ) from e
+
+    def _install_deb_package(self, deb_path: Path, architecture: str) -> None:
+        """Install a .deb package using dpkg."""
+        try:
+            # Check architecture compatibility
+            if architecture != "all" and architecture != "arm64":
+                # Could add multiarch support here if needed
+                pass
+            # Install with dpkg
+            subprocess.run(["dpkg", "-i", str(deb_path)], check=True, capture_output=True, text=True)
+            # Fix any missing dependencies
+            subprocess.run(["apt-get", "install", "-f", "-y"], check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            raise AppStoreError(
+                f"Fehler beim Installieren des .deb-Pakets: {e.stderr or str(e)}"
+            ) from e
+
+    def _extract_desktop_file(self, deb_path: Path, app_id: str, app_name: str, fallback: str) -> str:
+        """Extract .desktop file from .deb package for application menu."""
+        try:
+            # Use dpkg to extract control files and data
+            import tarfile
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                tmpdir = Path(tmpdir)
+                # Extract the .deb (ar archive)
+                subprocess.run(["ar", "x", str(deb_path)], cwd=tmpdir, check=True, capture_output=True)
+                # Find data.tar.xz or data.tar.gz or data.tar
+                data_tar = None
+                for name in ("data.tar.xz", "data.tar.gz", "data.tar.zst", "data.tar"):
+                    candidate = tmpdir / name
+                    if candidate.exists():
+                        data_tar = candidate
+                        break
+                if not data_tar:
+                    return fallback
+
+                # Extract data.tar
+                with tarfile.open(data_tar) as tf:
+                    tf.extractall(tmpdir)
+
+                # Look for .desktop files in usr/share/applications/
+                apps_dir = tmpdir / "usr" / "share" / "applications"
+                if apps_dir.exists():
+                    for desktop_file in apps_dir.glob("*.desktop"):
+                        content = desktop_file.read_text(encoding="utf-8", errors="ignore")
+                        # Check if this desktop file matches our app
+                        if app_id in content or app_name.lower() in content.lower():
+                            return content
+
+            return fallback
+        except Exception:
+            return fallback
+
     def install_app(
         self,
         app_id: str,
@@ -540,6 +796,9 @@ class AppStore:
         cat_app = self.get_catalog_app(app_id)
         if not cat_app:
             raise AppStoreError(f"Anwendung '{app_id}' wurde im Store-Katalog nicht gefunden.")
+
+        if cat_app.app_type == AppType.DEB:
+            return self._install_deb_app(cat_app, progress_callback)
 
         staging_dir = self.store_dir / f".staging_{app_id}_{os.getpid()}"
         if staging_dir.exists():
@@ -551,6 +810,72 @@ class AppStore:
             total_files = len(cat_app.files)
             if total_files > MAX_FILE_COUNT:
                 raise AppStoreError(f"Zu viele Dateien in der Anwendung ({total_files}).")
+
+            downloaded_bytes = 0
+            for index, (rel_path, expected_sha) in enumerate(cat_app.files.items(), start=1):
+                msg = f"Lade {Path(rel_path).name} herunter ({index}/{total_files})..."
+                if progress_callback:
+                    progress_callback(index - 1, total_files, msg)
+
+                # The catalog validator guarantees that every file belongs to
+                # this exact app folder, so it cannot spill into another app.
+                dest_rel = rel_path.removeprefix(f"{app_id}/")
+                
+                dest_file = staging_dir / dest_rel
+                dest_file.parent.mkdir(parents=True, exist_ok=True)
+
+                # Download file
+                file_url = self.file_url(rel_path)
+                data = self._download_and_verify(file_url, expected_sha, rel_path)
+                downloaded_bytes += len(data)
+                if downloaded_bytes > MAX_TOTAL_SIZE:
+                    raise AppStoreError("Gesamtgröße der Anwendung überschreitet das Limit.")
+
+                dest_file.write_bytes(data)
+
+            # Write app manifest if not already present
+            manifest_path = staging_dir / "app.json"
+            now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            manifest_data = {
+                "id": cat_app.id,
+                "name": cat_app.name,
+                "version": cat_app.version,
+                "entry": cat_app.entry,
+                "summary": cat_app.summary,
+                "description": cat_app.description,
+                "category": cat_app.category,
+                "author": cat_app.author,
+                "installed": now_iso,
+            }
+            manifest_path.write_text(json.dumps(manifest_data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+            if progress_callback:
+                progress_callback(total_files, total_files, "Installation wird abgeschlossen...")
+
+            # Atomically replace destination
+            if target_dir.exists():
+                old_dir = self.store_dir / f".old_{app_id}_{os.getpid()}"
+                target_dir.replace(old_dir)
+                staging_dir.replace(target_dir)
+                shutil.rmtree(old_dir, ignore_errors=True)
+            else:
+                staging_dir.replace(target_dir)
+
+            return InstalledApp(
+                id=cat_app.id,
+                name=cat_app.name,
+                version=cat_app.version,
+                entry=cat_app.entry,
+                installed=now_iso,
+                category=cat_app.category,
+                summary=cat_app.summary,
+                author=cat_app.author,
+                path=target_dir,
+            )
+
+        except Exception:
+            shutil.rmtree(staging_dir, ignore_errors=True)
+            raise
 
             downloaded_bytes = 0
             for index, (rel_path, expected_sha) in enumerate(cat_app.files.items(), start=1):

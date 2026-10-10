@@ -500,14 +500,19 @@ class TestStoreAppsUI(unittest.TestCase):
 
         store = AppStore()
         apps = store.fetch_catalog(force_remote=False)
-        self.assertEqual([app.id for app in apps], ["calculator", "unit_converter", "neon_sketch", "focus_flow"])
+        # Every store-apps folder must have a catalog entry (Python apps)
+        store_app_ids = {"calculator", "unit_converter", "neon_sketch", "focus_flow"}
+        catalog_ids = {app.id for app in apps}
+        self.assertTrue(store_app_ids.issubset(catalog_ids), "Alle Store-Apps müssen im Katalog sein")
 
         for app in apps:
-            for rel_path, expected_sha in app.files.items():
-                source = ROOT_DIR / "store-apps" / rel_path
-                self.assertTrue(source.is_file(), f"{rel_path} fehlt im Repository")
-                actual = hashlib.sha256(source.read_bytes()).hexdigest()
-                self.assertEqual(actual, expected_sha, f"Prüfsumme für {rel_path} stimmt nicht")
+            # Only validate files for Python apps (deb apps may have empty files)
+            if app.app_type.value == "python":
+                for rel_path, expected_sha in app.files.items():
+                    source = ROOT_DIR / "store-apps" / rel_path
+                    self.assertTrue(source.is_file(), f"{rel_path} fehlt im Repository")
+                    actual = hashlib.sha256(source.read_bytes()).hexdigest()
+                    self.assertEqual(actual, expected_sha, f"Prüfsumme für {rel_path} stimmt nicht")
             self.assertGreater(app.size, 0)
             for field in ("entry", "summary", "description", "category", "author"):
                 self.assertTrue(getattr(app, field), f"{app.id} hat kein {field}")
@@ -516,13 +521,15 @@ class TestStoreAppsUI(unittest.TestCase):
         """Each catalog entry must resolve to a constructible window class."""
         store = AppStore()
         for app in store.fetch_catalog(force_remote=False):
-            window = store.load_app_window(app.id)
-            try:
-                self.assertIsNotNone(window)
-            finally:
-                if hasattr(window, "close"):
-                    window.close()
-                    window.deleteLater()
+            # Only test Python apps - deb apps don't have Python entry points
+            if app.app_type.value == "python":
+                window = store.load_app_window(app.id)
+                try:
+                    self.assertIsNotNone(window)
+                finally:
+                    if hasattr(window, "close"):
+                        window.close()
+                        window.deleteLater()
 
     def test_catalog_files_are_publicly_downloadable(self) -> None:
         """The published repository must actually serve every catalog file.

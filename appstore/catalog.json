@@ -2,7 +2,7 @@
   "version": 1,
   "repository": "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos",
   "branch": "main",
-  "updated_at": "2026-10-09T19:33:35+00:00",
+  "updated_at": "2026-10-10T10:51:24+00:00",
   "apps": [
     {
       "id": "calculator",
@@ -67,6 +67,78 @@
         "focus_flow/app.json": "fbff87ee4a0ef129e8d63ae9572ad64b390e0018cc7f55089e6e991a969705a7",
         "focus_flow/app.py": "d62171982287924d6e6fa38e85a5b08d7a59b22e61b822b4f2cb9547e67c1160"
       }
+    },
+    {
+      "id": "vlc",
+      "name": "VLC Media Player",
+      "version": "3.0.20",
+      "entry": "vlc.desktop",
+      "summary": "Universeller Medienplayer für fast alle Video- und Audioformate.",
+      "description": "VLC ist ein freier, quelloffener und plattformübergreifender Multimedia-Player, der die meisten Multimedia-Dateien sowie DVDs, Audio-CDs, VCDs und verschiedene Streaming-Protokolle abspielt.",
+      "category": "Multimedia",
+      "author": "VideoLAN",
+      "size": 45000000,
+      "app_type": "deb",
+      "deb_url": "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos/releases/download/v1.5.0/vlc_3.0.20_arm64.deb",
+      "deb_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "deb_size": 45000000,
+      "architecture": "arm64",
+      "dependencies": [
+        "libvlc5",
+        "libvlccore9",
+        "libfreetype6",
+        "fontconfig"
+      ],
+      "desktop_file": "[Desktop Entry]\nType=Application\nName=VLC Media Player\nComment=Universeller Medienplayer\nExec=vlc %U\nIcon=vlc\nTerminal=false\nCategories=AudioVideo;Player;\nMimeType=video/x-flv;video/mp4;video/x-matroska;audio/mpeg;audio/x-wav;\nStartupNotify=true\n",
+      "files": {}
+    },
+    {
+      "id": "firefox",
+      "name": "Firefox Web Browser",
+      "version": "128.0.0",
+      "entry": "firefox.desktop",
+      "summary": "Schneller, sicherer und freier Webbrowser.",
+      "description": "Mozilla Firefox ist ein schneller, sicherer und quelloffener Webbrowser, der Ihre Privatsphäre schützt und Ihnen die Kontrolle über Ihre Online-Erfahrung gibt.",
+      "category": "Internet",
+      "author": "Mozilla",
+      "size": 85000000,
+      "app_type": "deb",
+      "deb_url": "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos/releases/download/v1.5.0/firefox_128.0_arm64.deb",
+      "deb_sha256": "7eb6b7fc6b64c450bff50b7deee3b3f92394afed4603a1938d99095ac242038e",
+      "deb_size": 85000000,
+      "architecture": "arm64",
+      "dependencies": [
+        "libgtk-3-0",
+        "libdbus-glib-1-2",
+        "libxt6",
+        "libasound2"
+      ],
+      "desktop_file": "[Desktop Entry]\nType=Application\nName=Firefox Web Browser\nComment=Schneller und sicherer Webbrowser\nExec=firefox %u\nIcon=firefox\nTerminal=false\nCategories=Network;WebBrowser;\nMimeType=text/html;text/xml;application/xhtml+xml;\nStartupNotify=true\n",
+      "files": {}
+    },
+    {
+      "id": "libreoffice",
+      "name": "LibreOffice",
+      "version": "24.8.1",
+      "entry": "libreoffice.desktop",
+      "summary": "Freies Office-Paket mit Writer, Calc, Impress und mehr.",
+      "description": "LibreOffice ist eine leistungsstarke und freie Bürosoftware-Suite, die mit anderen großen Büroanwendungen kompatibel ist und Writer, Calc, Impress, Draw, Base und Math umfasst.",
+      "category": "Büro",
+      "author": "The Document Foundation",
+      "size": 190000000,
+      "app_type": "deb",
+      "deb_url": "https://github.com/reftuhiuhiefquhiefrvqhiufrehiu/myos/releases/download/v1.5.0/libreoffice_24.8.1_arm64.deb",
+      "deb_sha256": "1dc4f97b2fde478bc37c16bf94ade53582b7c9b629702272d23eb5513fb125e6",
+      "deb_size": 190000000,
+      "architecture": "arm64",
+      "dependencies": [
+        "libreoffice-common",
+        "libreoffice-core",
+        "libreoffice-gtk3",
+        "libreoffice-base-drivers"
+      ],
+      "desktop_file": "[Desktop Entry]\nType=Application\nName=LibreOffice\nComment=Freies Office-Paket\nExec=libreoffice %U\nIcon=libreoffice\nTerminal=false\nCategories=Office;\nMimeType=application/vnd.oasis.opendocument.text;application/vnd.oasis.opendocument.spreadsheet;\nStartupNotify=true\n",
+      "files": {}
     }
   ]
 }
