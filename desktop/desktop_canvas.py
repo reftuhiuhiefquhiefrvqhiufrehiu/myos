@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import QMimeData, QPoint, QRect, QSize, Qt, Signal, QUrl
 from PySide6.QtGui import QColor, QDrag, QIcon, QPainter, QPen

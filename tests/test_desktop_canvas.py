@@ -5,6 +5,8 @@ positions, rubber-band selection, multi-selection, keyboard operation and
 drag & drop in both directions.
 """
 
+from __future__ import annotations
+
 import os
 import shutil
 import tempfile
@@ -16,7 +18,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QSettings, Qt
 from PySide6.QtGui import QIcon, QMouseEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QWidget
 from PySide6.QtTest import QTest
 
 from desktop.desktop_canvas import (
